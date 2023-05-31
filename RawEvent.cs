@@ -186,6 +186,11 @@ namespace PSProcessMonitor
         public int DetailsOffset;
     }
 
+    public interface IEventDetails
+    {
+
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct ProcessCreateStruct
     {
@@ -198,14 +203,14 @@ namespace PSProcessMonitor
         public long CreateTime;
         public LUID AuthenticationId;
         public int Virtualized;
-        public byte SidLength;
+        public byte UserSidLength;
         public byte IntegritySidLength;
         public ushort ProcessNameLength;
         public ushort CommandLineLength;
         public short Unknown;
     }
 
-    public class ProcessCreateDetails
+    public class ProcessCreateDetails: IEventDetails
     {
         public int ProcessSeq;
         public int ProcessId;
@@ -223,51 +228,36 @@ namespace PSProcessMonitor
         public string ProcessName;
         public string CommandLine;
 
-        internal ProcessCreateDetails GetFromDataStream(DataStreamView dataStreamView)
+        internal ProcessCreateDetails(DataStreamView dataStreamView)
         {
             ProcessCreateStruct processCreateStruct = dataStreamView.ReadStructure<ProcessCreateStruct>();
-            string processName = null, commandLine = null, user = null, userSID = null, integrity = null, integritySID = null;
-            if (processCreateStruct.SidLength != 0)
+
+            ProcessSeq = processCreateStruct.ProcessSeq;
+            ProcessId = processCreateStruct.ProcessId;
+            ParentProcessSeq = processCreateStruct.ParentProcessSeq;
+            ParentProcessId = processCreateStruct.ParentProcessId;
+            SessionId = processCreateStruct.SessionId;
+            IsProcess64bit = (processCreateStruct.IsWow64 == 0);
+            CreateTime = DateTime.FromFileTime(processCreateStruct.CreateTime);
+            AuthenticationId = string.Format("{0:X08}:{1:X08}", processCreateStruct.AuthenticationId.HighPart, processCreateStruct.AuthenticationId.LowPart);
+            Virtualized = (processCreateStruct.Virtualized != 0);
+
+            if (processCreateStruct.UserSidLength != 0)
             {
                 IntPtr ptrSID = dataStreamView.Ptr;
-                dataStreamView.Move(processCreateStruct.SidLength);
+                UserSID = NativeWin32.ConvertSidToString(ptrSID);
+                User = NativeWin32.ConvertSidToAccountName(ptrSID);
+                dataStreamView.Move(processCreateStruct.UserSidLength);
             }
             if(processCreateStruct.IntegritySidLength != 0)
             {
-                IntPtr ptrIntegritySID = dataStreamView.Ptr;
+                IntPtr ptrSID = dataStreamView.Ptr;
+                IntegritySID = NativeWin32.ConvertSidToString(ptrSID);
+                Integrity = NativeWin32.ConvertSidToAccountName(ptrSID);
                 dataStreamView.Move(processCreateStruct.IntegritySidLength);
             }
-            if(processCreateStruct.ProcessNameLength != 0)
-            {
-                IntPtr ptrProcessName = dataStreamView.Ptr;
-                processName = Marshal.PtrToStringUni(ptrProcessName);
-                dataStreamView.Move(processCreateStruct.ProcessNameLength);
-            }
-            if(processCreateStruct.CommandLineLength != 0)
-            {
-                IntPtr ptrCommandLine = dataStreamView.Ptr;
-                commandLine = Marshal.PtrToStringUni(ptrCommandLine);
-                dataStreamView.Move(processCreateStruct.CommandLineLength);
-            }
-
-            return new ProcessCreateDetails
-            {
-                ProcessSeq = processCreateStruct.ProcessSeq,
-                ProcessId = processCreateStruct.ProcessId,
-                ParentProcessSeq = processCreateStruct.ParentProcessSeq,
-                ParentProcessId = processCreateStruct.ParentProcessId,
-                SessionId = processCreateStruct.SessionId,
-                IsProcess64bit = (processCreateStruct.IsWow64 == 0),
-                CreateTime = DateTime.FromFileTime(processCreateStruct.CreateTime),
-                AuthenticationId = string.Format("{0:X08}:{1:X08}", processCreateStruct.AuthenticationId.HighPart, processCreateStruct.AuthenticationId.LowPart),
-                Virtualized = (processCreateStruct.Virtualized != 0),
-                User = user,
-                UserSID = userSID,
-                Integrity = integrity,
-                IntegritySID = integritySID,
-                ProcessName = processName,
-                CommandLine = commandLine,
-            };
+            ProcessName = dataStreamView.ReadUnicodeString(processCreateStruct.ProcessNameLength);
+            CommandLine = dataStreamView.ReadUnicodeString(processCreateStruct.CommandLineLength);
         }
     }
 
@@ -275,9 +265,27 @@ namespace PSProcessMonitor
     public struct ProcessStartStruct
     {
         public int ParentProcessId;
-        public ushort CommandNameLength;
+        public ushort CommandLineLength;
         public ushort CurrentDirectoryLength;
         public int EnvironmentLength;
+    }
+
+    public class ProcessStartDetails: IEventDetails
+    {
+        public int ParentProcessId;
+        public string CommandLine;
+        public string CurrentDirectory;
+        public string Environment;
+
+        internal ProcessStartDetails(DataStreamView dataStreamView)
+        {
+            ProcessStartStruct processStartStruct = dataStreamView.ReadStructure<ProcessStartStruct>();
+
+            ParentProcessId = processStartStruct.ParentProcessId;
+            CommandLine = dataStreamView.ReadUnicodeString(processStartStruct.CommandLineLength);
+            CurrentDirectory = dataStreamView.ReadUnicodeString(processStartStruct.CurrentDirectoryLength);
+            Environment = dataStreamView.ReadUnicodeString(processStartStruct.EnvironmentLength);
+        }
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -292,12 +300,50 @@ namespace PSProcessMonitor
         public long PeakPagefileUsage;
     }
 
+    public class ProcessExitDetails: IEventDetails
+    {
+        public int ExitStatus;
+        public long KernelTime;
+        public long UserTime;
+        public long WorkingSetSize;
+        public long PeakWorkingSetSize;
+        public long PagefileUsage;
+        public long PeakPagefileUsage;
+
+        internal ProcessExitDetails(DataStreamView dataStreamView)
+        {
+            ProcessExitStruct processExitStruct = dataStreamView.ReadStructure<ProcessExitStruct>();
+            ExitStatus = processExitStruct.ExitStatus,
+            KernelTime = processExitStruct.KernelTime,
+            UserTime = processExitStruct.UserTime,
+            WorkingSetSize = processExitStruct.WorkingSetSize,
+            PeakWorkingSetSize = processExitStruct.PeakWorkingSetSize,
+            PagefileUsage = processExitStruct.PagefileUsage,
+            PeakPagefileUsage = processExitStruct.PeakPagefileUsage,
+        }
+    }
+
     [StructLayout(LayoutKind.Sequential, Size = 0x10)]
-    public struct ProcessLoadImage
+    public struct LoadImageStruct
     {
         public IntPtr ImageBase;
         public int ImageSize;
         public short ImageNameLength;
+    }
+
+    public class LoadImageDetails: IEventDetails
+    {
+        public IntPtr ImageBase;
+        public int ImageSize;
+        public string ImageName;
+
+        internal LoadImageDetails(DataStreamView dataStreamView)
+        {
+            LoadImageStruct processLoadImageStruct = dataStreamView.ReadStructure<LoadImageStruct>();
+            ImageBase = processLoadImageStruct.ImageBase;
+            ImageSize = processLoadImageStruct.ImageSize;
+            ImageName = dataStreamView.ReadUnicodeString(processLoadImageStruct.ImageNameLength);
+        }
     }
 
     /**
@@ -320,6 +366,8 @@ namespace PSProcessMonitor
         public DateTime Timestamp;
         public int Status;
 
+        private delegate IEventDetails DetailsConstructor(DataStreamView dataStreamView);
+
         private static Dictionary<EventClass, Type> operationEnumMapping = new Dictionary<EventClass, Type>
         {
             [EventClass.Post] = typeof(PostOperation),
@@ -328,6 +376,15 @@ namespace PSProcessMonitor
             [EventClass.File] = typeof(FilesystemOperation),
             [EventClass.Profiling] = typeof(ProfilingOperation),
             [EventClass.Network] = typeof(NetworkOperation),
+        };
+
+        private static Dictionary<Enum, DetailsConstructor> operationDetailsMapping = new Dictionary<Enum, DetailsConstructor>
+        {
+            [ProcessOperation.ProcessDefined] = (detailsData) => new ProcessCreateDetails(detailsData),
+            [ProcessOperation.ProcessCreate] = (detailsData) => new ProcessCreateDetails(detailsData),
+            [ProcessOperation.ProcessStart] = (detailsData) => new ProcessStartDetails(detailsData),
+            [ProcessOperation.ProcessExit] = (detailsData) => new ProcessExitDetails(detailsData),
+            [ProcessOperation.LoadImage] = (detailsData) => new LoadImageDetails(detailsData),
         };
 
         public RawEvent(EventHeaderStruct header, long[] stackTrace, DataStreamView detailsData)
@@ -345,5 +402,7 @@ namespace PSProcessMonitor
             Timestamp = DateTime.FromFileTime(header.Timestamp);
             Status = header.Status;
         }
+
+        public GetDetails()
     }
 }

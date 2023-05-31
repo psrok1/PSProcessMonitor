@@ -205,23 +205,8 @@ namespace PSProcessMonitor
                     else
                     {
                         TOKEN_USER tokenUser = buffer.GetStructure();
-                        IntPtr userSid = tokenUser.User.Sid;
-                        UserSID = ConvertSidToString(userSid);
-
-                        StringBuilder name = new StringBuilder(2048);
-                        StringBuilder domainName = new StringBuilder(2048);
-                        int nameSize = name.Capacity / 2;
-                        int domainNameSize = domainName.Capacity / 2;
-
-                        if (NativeWin32.LookupAccountSid(
-                            null, userSid, name, ref nameSize, domainName, ref domainNameSize, out uint _))
-                        {
-                            User = string.Format("{0}\\{1}", domainName, name);
-                        }
-                        else
-                        {
-                            ReportError("LookupAccountSid failed for User field");
-                        }
+                        UserSID = NativeWin32.ConvertSidToString(tokenUser.User.Sid);
+                        User = NativeWin32.ConvertSidToAccountName(tokenUser.User.Sid);
                     }
                 }
 
@@ -234,23 +219,8 @@ namespace PSProcessMonitor
                     else
                     {
                         TOKEN_MANDATORY_LABEL tokenMandatoryLabel = buffer.GetStructure();
-                        IntPtr integritySID = tokenMandatoryLabel.Label.Sid;
-                        IntegritySID = ConvertSidToString(integritySID);
-
-                        StringBuilder name = new StringBuilder(2048);
-                        StringBuilder domainName = new StringBuilder(2048);
-                        int nameSize = name.Capacity / 2;
-                        int domainNameSize = domainName.Capacity / 2;
-
-                        if (NativeWin32.LookupAccountSid(
-                            null, integritySID, name, ref nameSize, domainName, ref domainNameSize, out uint _))
-                        {
-                            Integrity = string.Format("{0}\\{1}", domainName, name);
-                        }
-                        else
-                        {
-                            ReportError("LookupAccountSid failed for Integrity field");
-                        }
+                        IntegritySID = NativeWin32.ConvertSidToString(tokenMandatoryLabel.Label.Sid);
+                        Integrity = NativeWin32.ConvertSidToAccountName(tokenMandatoryLabel.Label.Sid);
                     }
                 }
 
@@ -290,7 +260,8 @@ namespace PSProcessMonitor
                 Company = versionInfo.CompanyName;
                 Description = versionInfo.FileDescription;
                 Version = versionInfo.FileVersion;
-            } catch(FileNotFoundException)
+            }
+            catch (FileNotFoundException)
             {
                 ReportError("GetVersionInfo failed: file was not found", 0);
             }
@@ -341,6 +312,7 @@ namespace PSProcessMonitor
             process.FetchProcessDetails();
             return process;
         }
+    }
 
     public class Thread
     {

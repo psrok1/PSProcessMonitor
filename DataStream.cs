@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace PSProcessMonitor
 {
@@ -78,11 +79,10 @@ namespace PSProcessMonitor
 
         public byte[] ReadBytes(int count)
         {
-            int structSize = Marshal.SizeOf<byte>() * count;
-            CheckHasBytes(structSize);
+            CheckHasBytes(count);
             byte[] values = new byte[count];
             Marshal.Copy(Ptr, values, 0, count);
-            MoveUnsafe(structSize);
+            MoveUnsafe(count);
             return values;
         }
 
@@ -107,6 +107,12 @@ namespace PSProcessMonitor
             Marshal.Copy(Ptr, values, 0, count);
             MoveUnsafe(structSize);
             return values;
+        }
+
+        public string ReadUnicodeString(int byteLength)
+        {
+            byte[] bytes = ReadBytes(byteLength);
+            return Encoding.Unicode.GetString(bytes);
         }
     }
 

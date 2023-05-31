@@ -2,6 +2,7 @@
 using System;
 using System.Runtime.ConstrainedExecution;
 using System.Runtime.InteropServices;
+using System.Security.Principal;
 using System.Text;
 using System.Threading;
 
@@ -281,6 +282,34 @@ namespace PSProcessMonitor
 
     internal class NativeWin32
     {
+        internal static string ConvertSidToString(IntPtr pSID)
+        {
+            if (!IsValidSid(pSID))
+            {
+                return null;
+            }
+
+            int sidLength = GetLengthSid(pSID);
+            byte[] sid = new byte[sidLength];
+            Marshal.Copy(pSID, sid, 0, sidLength);
+            SecurityIdentifier si = new SecurityIdentifier(sid, 0);
+            return si.ToString();
+        }
+
+        internal static string ConvertSidToAccountName(IntPtr pSID)
+        {
+            StringBuilder name = new StringBuilder(2048);
+            StringBuilder domainName = new StringBuilder(2048);
+            int nameSize = name.Capacity / 2;
+            int domainNameSize = domainName.Capacity / 2;
+
+            if (LookupAccountSid(
+                null, pSID, name, ref nameSize, domainName, ref domainNameSize, out uint _))
+            {
+                return string.Format("{0}\\{1}", domainName, name);
+            }
+            return null;
+        }
 
         [DllImport("fltlib", SetLastError = true)]
         internal static extern uint FilterConnectCommunicationPort(
