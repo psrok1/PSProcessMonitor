@@ -6,7 +6,8 @@ namespace PSProcessMonitor
 {
     /**
      * <summary>
-     * Serves stream memory view over unowned unmanaged memory block, optionally backed by DataStream object
+     * Serves stream memory view over unowned unmanaged memory block, optionally backed by DataStream object.
+     * It doesn't hold ownership on underlying memory, so it doesn't offer IDisposable interface.
      * </summary>
      */
     public class DataStreamView
@@ -109,17 +110,38 @@ namespace PSProcessMonitor
             return values;
         }
 
-        public string ReadUnicodeString(int byteLength)
+        public string ReadUnicodeString(int charLength)
         {
-            byte[] bytes = ReadBytes(byteLength);
-            return Encoding.Unicode.GetString(bytes);
+            string decoded = Marshal.PtrToStringUni(Ptr, charLength);
+            // I think this could be done better:
+            // I'm getting count of Unicode characters from structure.
+            // It's UTF-16, so it's at least 2 bytes per character but I
+            // don't know how many actual bytes are there. So I re-encode the string,
+            // with hope to achieve the same encoding and move pointer appropriately.
+            Move(Encoding.Unicode.GetBytes(decoded).Length);
+            return decoded;
+        }
+
+        public string ReadProcmonString(ushort length)
+        {
+            // MSB determines type of the string: 1 - ASCII, 0 - UTF-16
+            int charLength = length & 0x7FFF;
+            bool isAscii = (length & 0x8000) != 0;
+            if(isAscii)
+            {
+                return Encoding.ASCII.GetString(this.ReadBytes(charLength));
+            } else
+            {
+                return ReadUnicodeString(charLength);
+            }
         }
     }
 
     /**
      * <summary>
      * Serves stream memory view over unmanaged memory block.
-     * DataStream takes copy and owns unmanaged memory. It cares of proper disposal.
+     * DataStream owns unmanaged memory (optionally by making a copy), 
+     * and frees the underlying memory during disposal.
      * </summary>
      */
     public sealed class DataStream : DataStreamView, IDisposable
@@ -162,16 +184,22 @@ namespace PSProcessMonitor
         }
     }
 
-    public sealed class StructureBuffer<T>: IDisposable
+    /**
+     * <summary>
+     * Reads structure from given IntPtr and frees the
+     * underlying memory when disposed.
+     * </summary>
+     */
+    public sealed class StructureReader<T>: IDisposable
     {
         private bool _disposed = false;
 
         public IntPtr Ptr { get; private set; }
         public int Size { get; private set; }
 
-        public static StructureBuffer<T> Invalid = new StructureBuffer<T> { _disposed = true };
+        public static StructureReader<T> Invalid = new StructureReader<T> { _disposed = true };
 
-        public StructureBuffer(IntPtr ptr, int size)
+        public StructureReader(IntPtr ptr, int size)
         {
             Ptr = ptr;
             Size = size;
@@ -181,11 +209,11 @@ namespace PSProcessMonitor
             }
         }
 
-        public StructureBuffer(int size) : this(Marshal.AllocHGlobal(size), size) { }
+        public StructureReader(int size) : this(Marshal.AllocHGlobal(size), size) { }
 
-        public StructureBuffer(IntPtr ptr) : this(ptr, Marshal.SizeOf<T>()) { }
+        public StructureReader(IntPtr ptr) : this(ptr, Marshal.SizeOf<T>()) { }
 
-        public StructureBuffer() : this(Marshal.SizeOf<T>()) { }
+        public StructureReader() : this(Marshal.SizeOf<T>()) { }
 
         public bool IsInvalid()
         {

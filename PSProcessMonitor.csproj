@@ -43,11 +43,12 @@
     <Compile Include="DataStream.cs" />
     <Compile Include="GetSystemState.cs" />
     <Compile Include="NativeWin32.cs" />
+    <Compile Include="ProcmonReader.cs" />
     <Compile Include="RawEvent.cs" />
     <Compile Include="ReadProcessMonitor.cs" />
     <Compile Include="ProcmonDriverClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="ProcessState.cs" />
+    <Compile Include="SystemState.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

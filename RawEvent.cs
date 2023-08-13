@@ -6,17 +6,16 @@ namespace PSProcessMonitor
 {
     public enum EventClass : short
     {
+        // This is post-callback for I/O events
+        // containing extra details about finished operation
         Post = 0,
         Process = 1,
         Registry = 2,
         File = 3,
         Profiling = 4,
+        // This field is used in PML files only
+        // Kernel driver doesn't track network events
         Network = 5,
-    }
-
-    public enum PostOperation : short
-    {
-        // todo?
     }
 
     public enum ProcessOperation : short
@@ -182,16 +181,16 @@ namespace PSProcessMonitor
         public short StackTraceLength;
         [FieldOffset(0x2C)]
         public int DetailsLength;
+        // This field is used in PML files only
         [FieldOffset(0x30)]
-        public int DetailsOffset;
+        public int ExtraDetailsOffset;
     }
 
-    public interface IEventDetails
+    public abstract class EventDetails
     {
-
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct ProcessCreateStruct
     {
         public int ProcessSeq;
@@ -210,7 +209,7 @@ namespace PSProcessMonitor
         public short Unknown;
     }
 
-    public class ProcessCreateDetails: IEventDetails
+    public class ProcessCreateDetails: EventDetails
     {
         public int ProcessSeq;
         public int ProcessId;
@@ -256,12 +255,12 @@ namespace PSProcessMonitor
                 Integrity = NativeWin32.ConvertSidToAccountName(ptrSID);
                 dataStreamView.Move(processCreateStruct.IntegritySidLength);
             }
-            ProcessName = dataStreamView.ReadUnicodeString(processCreateStruct.ProcessNameLength);
-            CommandLine = dataStreamView.ReadUnicodeString(processCreateStruct.CommandLineLength);
+            ProcessName = dataStreamView.ReadProcmonString(processCreateStruct.ProcessNameLength);
+            CommandLine = dataStreamView.ReadProcmonString(processCreateStruct.CommandLineLength);
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct ProcessStartStruct
     {
         public int ParentProcessId;
@@ -270,7 +269,7 @@ namespace PSProcessMonitor
         public int EnvironmentLength;
     }
 
-    public class ProcessStartDetails: IEventDetails
+    public class ProcessStartDetails: EventDetails
     {
         public int ParentProcessId;
         public string CommandLine;
@@ -282,13 +281,13 @@ namespace PSProcessMonitor
             ProcessStartStruct processStartStruct = dataStreamView.ReadStructure<ProcessStartStruct>();
 
             ParentProcessId = processStartStruct.ParentProcessId;
-            CommandLine = dataStreamView.ReadUnicodeString(processStartStruct.CommandLineLength);
-            CurrentDirectory = dataStreamView.ReadUnicodeString(processStartStruct.CurrentDirectoryLength);
+            CommandLine = dataStreamView.ReadProcmonString(processStartStruct.CommandLineLength);
+            CurrentDirectory = dataStreamView.ReadProcmonString(processStartStruct.CurrentDirectoryLength);
             Environment = dataStreamView.ReadUnicodeString(processStartStruct.EnvironmentLength);
         }
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
     public struct ProcessExitStruct
     {
         public int ExitStatus;
@@ -300,7 +299,7 @@ namespace PSProcessMonitor
         public long PeakPagefileUsage;
     }
 
-    public class ProcessExitDetails: IEventDetails
+    public class ProcessExitDetails: EventDetails
     {
         public int ExitStatus;
         public long KernelTime;
@@ -313,25 +312,25 @@ namespace PSProcessMonitor
         internal ProcessExitDetails(DataStreamView dataStreamView)
         {
             ProcessExitStruct processExitStruct = dataStreamView.ReadStructure<ProcessExitStruct>();
-            ExitStatus = processExitStruct.ExitStatus,
-            KernelTime = processExitStruct.KernelTime,
-            UserTime = processExitStruct.UserTime,
-            WorkingSetSize = processExitStruct.WorkingSetSize,
-            PeakWorkingSetSize = processExitStruct.PeakWorkingSetSize,
-            PagefileUsage = processExitStruct.PagefileUsage,
-            PeakPagefileUsage = processExitStruct.PeakPagefileUsage,
+            ExitStatus = processExitStruct.ExitStatus;
+            KernelTime = processExitStruct.KernelTime;
+            UserTime = processExitStruct.UserTime;
+            WorkingSetSize = processExitStruct.WorkingSetSize;
+            PeakWorkingSetSize = processExitStruct.PeakWorkingSetSize;
+            PagefileUsage = processExitStruct.PagefileUsage;
+            PeakPagefileUsage = processExitStruct.PeakPagefileUsage;
         }
     }
 
-    [StructLayout(LayoutKind.Sequential, Size = 0x10)]
+    [StructLayout(LayoutKind.Sequential, Size = 0x10, Pack = 1)]
     public struct LoadImageStruct
     {
         public IntPtr ImageBase;
         public int ImageSize;
-        public short ImageNameLength;
+        public ushort ImageNameLength;
     }
 
-    public class LoadImageDetails: IEventDetails
+    public class LoadImageDetails: EventDetails
     {
         public IntPtr ImageBase;
         public int ImageSize;
@@ -342,10 +341,107 @@ namespace PSProcessMonitor
             LoadImageStruct processLoadImageStruct = dataStreamView.ReadStructure<LoadImageStruct>();
             ImageBase = processLoadImageStruct.ImageBase;
             ImageSize = processLoadImageStruct.ImageSize;
-            ImageName = dataStreamView.ReadUnicodeString(processLoadImageStruct.ImageNameLength);
+            ImageName = dataStreamView.ReadProcmonString(processLoadImageStruct.ImageNameLength);
         }
     }
 
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct ThreadCreateStruct
+    {
+        public int ThreadID;
+    }
+
+    public class ThreadCreateDetails: EventDetails
+    {
+        public int ThreadID;
+        
+        internal ThreadCreateDetails(DataStreamView dataStreamView)
+        {
+            ThreadCreateStruct threadCreateStruct = dataStreamView.ReadStructure<ThreadCreateStruct>();
+            ThreadID = threadCreateStruct.ThreadID;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct ThreadExitStruct
+    {
+        public int ExitCode;
+        public long KernelTime;
+        public long UserTime;
+    }
+
+    public class ThreadExitDetails: EventDetails
+    {
+        public int ExitCode;
+        public long KernelTime;
+        public long UserTime;
+
+        internal ThreadExitDetails(DataStreamView dataStreamView)
+        {
+            ThreadExitStruct threadExitStruct = dataStreamView.ReadStructure<ThreadExitStruct>();
+            ExitCode = threadExitStruct.ExitCode;
+            KernelTime = threadExitStruct.KernelTime;
+            UserTime = threadExitStruct.UserTime;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    public struct RegistryBasicKeyStruct
+    {
+        public ushort PathLength;
+    }
+
+    public class RegistryBasicKeyDetails : EventDetails
+    {
+        public string Path;
+
+        internal RegistryBasicKeyDetails(DataStreamView dataStreamView)
+        {
+            RegistryBasicKeyStruct basicKeyStruct = dataStreamView.ReadStructure<RegistryBasicKeyStruct>();
+            Path = dataStreamView.ReadProcmonString(basicKeyStruct.PathLength);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    public struct RegistryOpenCreateKeyStruct
+    {
+        public ushort PathLength;
+        public int DesiredAccess;
+    }
+
+    public class RegistryOpenCreateKeyDetails: EventDetails
+    {
+        public string Path;
+        public int DesiredAccess;
+
+        internal RegistryOpenCreateKeyDetails(DataStreamView dataStreamView)
+        {
+            RegistryOpenCreateKeyStruct openCreateKeyStruct = dataStreamView.ReadStructure<RegistryOpenCreateKeyStruct>();
+            Path = dataStreamView.ReadProcmonString(openCreateKeyStruct.PathLength);
+            DesiredAccess = openCreateKeyStruct.DesiredAccess;
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    public struct RegistryPostOpenCreateKeyStruct
+    {
+        public int GrantedAccess;
+        public int Disposition;
+    }
+
+    public class RegistryPostOpenCreateKeyDetails: EventDetails
+    {
+        public int GrantedAccess;
+        public int Disposition;
+
+        internal RegistryPostOpenCreateKeyDetails(DataStreamView dataStreamView)
+        {
+            RegistryPostOpenCreateKeyStruct postOpenCreateKeyStruct = dataStreamView.ReadStructure<RegistryPostOpenCreateKeyStruct>();
+            GrantedAccess = postOpenCreateKeyStruct.GrantedAccess;
+            Disposition = postOpenCreateKeyStruct.Disposition;
+        }
+    }
+    
     /**
      * <summary>
      * Context-less event representation
@@ -355,7 +451,6 @@ namespace PSProcessMonitor
     {
         public readonly EventHeaderStruct header;
         public readonly long[] stackTrace;
-        public readonly DataStreamView detailsData;
 
         public int ProcessSeq;
         public int ThreadId;
@@ -365,12 +460,13 @@ namespace PSProcessMonitor
         public int Duration;
         public DateTime Timestamp;
         public int Status;
+        public EventDetails Details;
+        public EventDetails PostDetails;
 
-        private delegate IEventDetails DetailsConstructor(DataStreamView dataStreamView);
+        private delegate EventDetails DetailsConstructor(DataStreamView dataStreamView);
 
         private static Dictionary<EventClass, Type> operationEnumMapping = new Dictionary<EventClass, Type>
         {
-            [EventClass.Post] = typeof(PostOperation),
             [EventClass.Process] = typeof(ProcessOperation),
             [EventClass.Registry] = typeof(RegistryOperation),
             [EventClass.File] = typeof(FilesystemOperation),
@@ -385,24 +481,40 @@ namespace PSProcessMonitor
             [ProcessOperation.ProcessStart] = (detailsData) => new ProcessStartDetails(detailsData),
             [ProcessOperation.ProcessExit] = (detailsData) => new ProcessExitDetails(detailsData),
             [ProcessOperation.LoadImage] = (detailsData) => new LoadImageDetails(detailsData),
+            [ProcessOperation.ThreadCreate] = (detailsData) => new ThreadCreateDetails(detailsData),
+            [ProcessOperation.ThreadExit] = (detailsData) => new ThreadExitDetails(detailsData),
+            [RegistryOperation.RegOpenKey] = (detailsData) => new RegistryOpenCreateKeyDetails(detailsData),
+            [RegistryOperation.RegCreateKey] = (detailsData) => new RegistryOpenCreateKeyDetails(detailsData),
+            [RegistryOperation.RegCloseKey] = (detailsData) => new RegistryBasicKeyDetails(detailsData),
+        };
+
+        private static Dictionary<Enum, DetailsConstructor> postOperationDetailsMapping = new Dictionary<Enum, DetailsConstructor>
+        {
+            [RegistryOperation.RegOpenKey] = (detailsData) => new RegistryPostOpenCreateKeyDetails(detailsData),
+            [RegistryOperation.RegCreateKey] = (detailsData) => new RegistryPostOpenCreateKeyDetails(detailsData),
         };
 
         public RawEvent(EventHeaderStruct header, long[] stackTrace, DataStreamView detailsData)
         {
             this.header = header;
             this.stackTrace = stackTrace;
-            this.detailsData = detailsData;
 
             ProcessSeq = header.ProcessSeq;
             ThreadId = header.ThreadId;
             Class = (EventClass)header.Class;
-            Operation = (Enum)Enum.ToObject(operationEnumMapping[Class], header.Operation);
+            if(Class != EventClass.Post)
+            {
+                Operation = (Enum)Enum.ToObject(operationEnumMapping[Class], header.Operation);
+                operationDetailsMapping.TryGetValue(Operation, out DetailsConstructor detailsConstructor);
+                if (detailsConstructor != null)
+                {
+                    Details = detailsConstructor(detailsData);
+                }
+            }
             Sequence = header.Sequence;
             Duration = header.Duration;
             Timestamp = DateTime.FromFileTime(header.Timestamp);
             Status = header.Status;
         }
-
-        public GetDetails()
     }
 }

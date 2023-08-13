@@ -121,7 +121,7 @@ namespace PSProcessMonitor
             Disconnect();
         }
 
-        public IEnumerable<DriverMessage> ReceiveMessages(CancellationToken cancellationToken)
+        public IEnumerable<RawEvent> ReceiveEvents(CancellationToken cancellationToken)
         {
             BlockingCollection<DriverMessage> driverMessageQueue = new BlockingCollection<DriverMessage>();
             // Task cares of proper exception passing to the main thread
@@ -150,6 +150,8 @@ namespace PSProcessMonitor
                         int index = WaitHandle.WaitAny(waitHandles, 1000);
                         if (index == WaitHandle.WaitTimeout)
                         {
+                            // If we don't get anything for more than 1 second, possibly driver stopped talking
+                            // due to exhausted internal queue (as we're too slow to receive)
                             throw new DriverSynchronizationLostException();
                         }
                         else if (index == 0)
@@ -160,7 +162,14 @@ namespace PSProcessMonitor
                                 throw new DriverClientQueueExhausted();
                             }
                             DriverMessage message = new DriverMessage(messageBuffer);
-                            driverMessageQueue.Add(message);
+                            try
+                            {
+                                driverMessageQueue.Add(message);
+                            } catch(InvalidOperationException)
+                            {
+                                // If adding completed on consumer side: break the loop
+                                break;
+                            }
                         }
                         else
                         {
@@ -176,13 +185,43 @@ namespace PSProcessMonitor
                 }
             }, TaskCreationOptions.LongRunning);
 
-            foreach (var message in driverMessageQueue.GetConsumingEnumerable())
+            IEnumerable<DriverMessage> consumingEnumerable = driverMessageQueue.GetConsumingEnumerable();
+            bool receiveCompleted = false;
+            try
             {
-                yield return message;
+                foreach (var message in consumingEnumerable)
+                {
+                    using (message)
+                    {
+                        foreach (var ev in message.ParseEvents())
+                        {
+                            yield return ev;
+                        }
+                    }
+                }
+                receiveCompleted = true;
+            } finally
+            {
+                // So.. why we landed here? There are multiple options
+                // 1. message.ParseEvents thrown exception due to a bug
+                // 2. ReceiveMessages enumerable was prematurely disposed
+                // 3. try block finished
+                //
+                // If it's fault on consumer side (receiving was not completed) then
+                // we need to exhaust ReceiveMessages enumeration to dispose all messages
+                // that are left in queue (they're holding unmanaged heap memory)
+                if (!receiveCompleted)
+                {
+                    driverMessageQueue.CompleteAdding();
+                    foreach (var message in consumingEnumerable)
+                    {
+                        message.Dispose();
+                    }
+                }
+                // At this point, Task is in RanToCompletion or Faulted state
+                // In case of Faulted, this will propagate any exceptions that occurred
+                receiver.Wait();
             }
-            // At this point, Task is in RanToCompletion or Faulted state
-            // In case of Faulted, this will propagate any exceptions that occurred
-            receiver.Wait();
         }
 
         public void ConfigureFlags(int flags)

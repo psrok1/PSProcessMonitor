@@ -6,6 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
+using System.Threading;
 
 namespace PSProcessMonitor
 {
@@ -62,7 +63,7 @@ namespace PSProcessMonitor
 
         private T? ReadProcessStructure<T>(SafeProcessHandle handle, IntPtr address) where T : struct
         {
-            using (StructureBuffer<T> buffer = new StructureBuffer<T>())
+            using (StructureReader<T> buffer = new StructureReader<T>())
             {
                 if (NativeWin32.ReadProcessMemory(handle, address, buffer.Ptr, buffer.Size, out int _))
                 {
@@ -132,7 +133,7 @@ namespace PSProcessMonitor
 
         private IntPtr GetProcessPEBPtr(SafeProcessHandle handle)
         {
-            using (StructureBuffer<PROCESS_BASIC_INFORMATION> buffer = new StructureBuffer<PROCESS_BASIC_INFORMATION>())
+            using (StructureReader<PROCESS_BASIC_INFORMATION> buffer = new StructureReader<PROCESS_BASIC_INFORMATION>())
             {
                 int ntstatus = NativeWin32.NtQueryInformationProcess(handle, 0, buffer.Ptr, (uint)buffer.Size, out uint _);
                 if (ntstatus != 0)
@@ -161,7 +162,7 @@ namespace PSProcessMonitor
             return si.ToString();
         }
 
-        private StructureBuffer<T> GetTokenInformation<T>(SafeAccessTokenHandle tokenHandle, TOKEN_INFORMATION_CLASS informationClass)
+        private StructureReader<T> GetTokenInformation<T>(SafeAccessTokenHandle tokenHandle, TOKEN_INFORMATION_CLASS informationClass)
             where T : struct
         {
             NativeWin32.GetTokenInformation(tokenHandle, informationClass, IntPtr.Zero, 0, out uint structSize);
@@ -170,7 +171,7 @@ namespace PSProcessMonitor
                 return null;
             }
 
-            StructureBuffer<T> buffer = new StructureBuffer<T>((int)structSize);
+            StructureReader<T> buffer = new StructureReader<T>((int)structSize);
             if (NativeWin32.GetTokenInformation(
                 tokenHandle,
                 informationClass,
@@ -181,7 +182,7 @@ namespace PSProcessMonitor
                 return buffer;
             }
             buffer.Dispose();
-            return StructureBuffer<T>.Invalid;
+            return StructureReader<T>.Invalid;
         }
 
         private void FetchProcessDetailsFromToken(SafeProcessHandle handle)
@@ -196,7 +197,7 @@ namespace PSProcessMonitor
             }
             using (tokenHandle)
             {
-                using (StructureBuffer<TOKEN_USER> buffer = GetTokenInformation<TOKEN_USER>(tokenHandle, TOKEN_INFORMATION_CLASS.TokenUser))
+                using (StructureReader<TOKEN_USER> buffer = GetTokenInformation<TOKEN_USER>(tokenHandle, TOKEN_INFORMATION_CLASS.TokenUser))
                 {
                     if (buffer.IsInvalid())
                     {
@@ -210,7 +211,7 @@ namespace PSProcessMonitor
                     }
                 }
 
-                using (StructureBuffer<TOKEN_MANDATORY_LABEL> buffer = GetTokenInformation<TOKEN_MANDATORY_LABEL>(tokenHandle, TOKEN_INFORMATION_CLASS.TokenIntegrityLevel))
+                using (StructureReader<TOKEN_MANDATORY_LABEL> buffer = GetTokenInformation<TOKEN_MANDATORY_LABEL>(tokenHandle, TOKEN_INFORMATION_CLASS.TokenIntegrityLevel))
                 {
                     if (buffer.IsInvalid())
                     {
@@ -224,7 +225,7 @@ namespace PSProcessMonitor
                     }
                 }
 
-                using (StructureBuffer<TOKEN_STATISTICS> buffer = GetTokenInformation<TOKEN_STATISTICS>(tokenHandle, TOKEN_INFORMATION_CLASS.TokenStatistics))
+                using (StructureReader<TOKEN_STATISTICS> buffer = GetTokenInformation<TOKEN_STATISTICS>(tokenHandle, TOKEN_INFORMATION_CLASS.TokenStatistics))
                 {
                     if (buffer.IsInvalid())
                     {
@@ -237,7 +238,7 @@ namespace PSProcessMonitor
                     }
                 }
 
-                using (StructureBuffer<TOKEN_VIRTUALIZATION_ENABLED> buffer = GetTokenInformation<TOKEN_VIRTUALIZATION_ENABLED>(tokenHandle, TOKEN_INFORMATION_CLASS.TokenVirtualizationEnabled))
+                using (StructureReader<TOKEN_VIRTUALIZATION_ENABLED> buffer = GetTokenInformation<TOKEN_VIRTUALIZATION_ENABLED>(tokenHandle, TOKEN_INFORMATION_CLASS.TokenVirtualizationEnabled))
                 {
                     if (buffer.IsInvalid())
                     {
@@ -345,19 +346,33 @@ namespace PSProcessMonitor
         public DateTime Timestamp;
     }
 
-
-    public class InconsistentProcessStateException : Exception
+    /**
+     * <summary>
+     * Thrown when TID/ProcessSeq can't be matched to system state.
+     * It should never happen and indicates a bug.
+     * </summary>
+     **/
+    public class InconsistentSystemStateException : Exception
     {
-        public InconsistentProcessStateException(string message) : base(message) { }
+        public InconsistentSystemStateException(string message) : base(message) { }
     }
 
-    public class ProcessState
+    /**
+     * <summary>
+     * ProcessMonitor driver identifies event source via sequential
+     * process identifier (ProcessSeq) and regular thread identifier. 
+     * Mapping of the sequence number to the process id is known only 
+     * locally, so we need to track opened/closed processes to be able 
+     * to map sequence identifiers to proper PIDs.
+     * </summary>
+     **/
+    public class SystemState
     {
         public Dictionary<int, Process> ProcessById;
         public Dictionary<int, Thread> ThreadById;
         public Dictionary<long, Process> ProcessBySeq;
 
-        public ProcessState(
+        public SystemState(
             Dictionary<int, Process> processById,
             Dictionary<int, Thread> threadById,
             Dictionary<long, Process> processBySeq)
@@ -367,7 +382,7 @@ namespace PSProcessMonitor
             ProcessBySeq = processBySeq;
         }
 
-        public ProcessState(
+        public SystemState(
             Dictionary<int, Process> processById,
             Dictionary<int, Thread> threadById) : this(processById, threadById, new Dictionary<long, Process>())
         { }
@@ -381,16 +396,16 @@ namespace PSProcessMonitor
                 if (thread == null)
                 {
                     // Inconsistent state: thread doesn't exist
-                    throw new InconsistentProcessStateException(
-                        string.Format("Thread {0} is referenced by event but is unknown by system state", threadId)
+                    throw new InconsistentSystemStateException(
+                        string.Format("Thread {0} is referenced by event but is not known by system state", threadId)
                     );
                 }
                 process = this.GetProcessById(thread.ProcessId);
                 if (process == null)
                 {
                     // Inconsistent state: thread exist but process doesn't
-                    throw new InconsistentProcessStateException(
-                        string.Format("Thread {0} exist but process {1} is unknown by system state", threadId, thread.ProcessId)
+                    throw new InconsistentSystemStateException(
+                        string.Format("Thread {0} exist but related process {1} is not known by system state", threadId, thread.ProcessId)
                     );
                 }
                 this.AssignSeqToProcess(process, processSeq);
@@ -482,7 +497,7 @@ namespace PSProcessMonitor
             return false;
         }
 
-        public static ProcessState GetCurrentState()
+        public static SystemState GetCurrentState()
         {
             // Call this AFTER starting recording events
             int processInformationSize = 0x100000;
@@ -545,7 +560,67 @@ namespace PSProcessMonitor
                 }
             }
 
-            return new ProcessState(processById, threadById);
+            return new SystemState(processById, threadById);
+        }
+
+        public (Process process, Thread thread) GetProcessAndThreadForEvent(RawEvent rawEvent)
+        {
+            // Get process. If new one, assign to state.
+            Process process;
+            if (rawEvent.Operation != null && (rawEvent.Operation.Equals(ProcessOperation.ProcessDefined) || rawEvent.Operation.Equals(ProcessOperation.ProcessCreate)))
+            {
+                ProcessCreateDetails details = (ProcessCreateDetails)rawEvent.Details;
+                process = new Process
+                {
+                    ProcessId = details.ProcessId,
+                    ParentProcessId = details.ParentProcessId,
+                    AuthenticationId = details.AuthenticationId,
+                    SessionId = details.SessionId,
+                    Virtualized = details.Virtualized,
+                    IsProcess64bit = details.IsProcess64bit,
+                    Integrity = details.Integrity,
+                    IntegritySID = details.IntegritySID,
+                    User = details.User,
+                    UserSID = details.UserSID,
+                    ProcessName = details.ProcessName,
+                    CommandLine = details.CommandLine,
+                    StartTime = details.CreateTime,
+                };
+                AddProcess(process);
+                AssignSeqToProcess(process, rawEvent.ProcessSeq);
+            }
+            else
+            {
+                process = GetProcessBySeq(rawEvent.ProcessSeq);
+            }
+            // Get thread. If new one, assign to state.
+            Thread thread;
+            if(rawEvent.Operation != null && rawEvent.Operation.Equals(ProcessOperation.ThreadCreate))
+            {
+                ThreadCreateDetails details = (ThreadCreateDetails)rawEvent.Details;
+                thread = new Thread
+                {
+                    ThreadId = details.ThreadID,
+                    ProcessId = process.ProcessId,
+                    CreateTime = rawEvent.Timestamp,
+                };
+                AddThread(thread);
+            }
+            else
+            {
+                thread = GetThreadById(rawEvent.ThreadId);
+            }
+            // Handle process and thread exit.
+            if (rawEvent.Operation != null && rawEvent.Operation.Equals(ProcessOperation.ProcessExit))
+            {
+                process.EndTime = rawEvent.Timestamp;
+                FinishProcess(process);
+            }
+            if (rawEvent.Operation != null && thread != null && rawEvent.Operation.Equals(ProcessOperation.ThreadExit))
+            {
+                FinishThread(thread);
+            }
+            return (process, thread);
         }
     }
 }

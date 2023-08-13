@@ -15,42 +15,18 @@ namespace PSProcessMonitor
         protected override void ProcessRecord()
         {
             CancellationToken cancellationToken = cancellationTokenSource.Token;
-            ProcmonDriverClient procmonClient;
+            ProcmonReader reader = new ProcmonReader();
 
-            procmonClient = ProcmonDriverClient.Connect();
-            procmonClient.ConfigureFlags(7);
-            int? lastSecond = null;
-            try
+            foreach (var ev in reader.GetEvents(cancellationToken))
             {
-                foreach (var message in procmonClient.ReceiveMessages(cancellationToken))
+                if (!cancellationToken.IsCancellationRequested)
                 {
-                    using (message)
+                    try
                     {
-                        // Even after cancellation, we need to exhaust
-                        // ReceiveMessages enumeration to dispose all messages
-                        // that are left in queue (they're holding unmanaged heap memory)
-                        if (!cancellationToken.IsCancellationRequested)
-                        {
-                            DateTime currentTime = DateTime.Now;
-                            RawEvent[] events = message.ParseEvents().ToArray();
-                            if (lastSecond != currentTime.Second)
-                            {
-                                Console.WriteLine("Current time is {0}", currentTime);
-                                try
-                                {
-                                    WriteObject(events[0], true);
-                                }
-                                catch (PipelineStoppedException) { }
-                                lastSecond = currentTime.Second;
-                            }
-                        }
+                        WriteObject(ev);
                     }
+                    catch (PipelineStoppedException) { }
                 }
-            }
-            finally
-            {
-                procmonClient.ConfigureFlags(0);
-                procmonClient.Disconnect();
             }
         }
 
