@@ -20,13 +20,22 @@ namespace PSProcessMonitor
 
     public enum ProcessOperation : short
     {
+        // These events are the first events we get from
+        // the driver. Driver informs us about processes
+        // in the system and their sequence identifiers
         ProcessDefined = 0,
+        // That event informs us about process creation
+        // but from creator process perspective (kind of pre-event)
+        // ProcessSeq is set to the creator
         ProcessCreate = 1,
         ProcessExit = 2,
         ThreadCreate = 3,
         ThreadExit = 4,
         LoadImage = 5,
         ThreadProfile = 6,
+        // That event informs us about actual process start
+        // Surprisingly, we don't have process PID in details
+        // and ProcessSeq is set to the next value in sequence
         ProcessStart = 7,
         ProcessStatistics = 8,
         SystemStatistics = 9,
@@ -515,6 +524,11 @@ namespace PSProcessMonitor
             Duration = header.Duration;
             Timestamp = DateTime.FromFileTime(header.Timestamp);
             Status = header.Status;
+        }
+
+        public bool IsPreEvent()
+        {
+            return Class.Equals(EventClass.File) || Class.Equals(EventClass.Registry);
         }
     }
 }

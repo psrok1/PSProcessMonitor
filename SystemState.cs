@@ -370,12 +370,13 @@ namespace PSProcessMonitor
     {
         public Dictionary<int, Process> ProcessById;
         public Dictionary<int, Thread> ThreadById;
-        public Dictionary<long, Process> ProcessBySeq;
+        public Dictionary<int, Process> ProcessBySeq;
+        public int LastProcessSeq = 0;
 
         public SystemState(
             Dictionary<int, Process> processById,
             Dictionary<int, Thread> threadById,
-            Dictionary<long, Process> processBySeq)
+            Dictionary<int, Process> processBySeq)
         {
             ProcessById = processById;
             ThreadById = threadById;
@@ -384,10 +385,10 @@ namespace PSProcessMonitor
 
         public SystemState(
             Dictionary<int, Process> processById,
-            Dictionary<int, Thread> threadById) : this(processById, threadById, new Dictionary<long, Process>())
+            Dictionary<int, Thread> threadById) : this(processById, threadById, new Dictionary<int, Process>())
         { }
 
-        public Process GetProcessForEvent(long processSeq, int threadId)
+        public Process GetProcessForEvent(int processSeq, int threadId)
         {
             Process process = this.GetProcessBySeq(processSeq);
             if (process == null)
@@ -423,7 +424,7 @@ namespace PSProcessMonitor
             return null;
         }
 
-        public Process GetProcessBySeq(long processSeq)
+        public Process GetProcessBySeq(int processSeq)
         {
             if (ProcessBySeq.TryGetValue(processSeq, out Process process))
             {
@@ -443,9 +444,11 @@ namespace PSProcessMonitor
             return null;
         }
 
-        public void AssignSeqToProcess(Process process, long processSeq)
+        public void AssignSeqToProcess(Process process, int processSeq)
         {
             ProcessBySeq[processSeq] = process;
+            if(processSeq > LastProcessSeq)
+                LastProcessSeq = processSeq;
         }
 
         public void AddProcess(Process process)
@@ -566,30 +569,39 @@ namespace PSProcessMonitor
         public (Process process, Thread thread) GetProcessAndThreadForEvent(RawEvent rawEvent)
         {
             // Get process. If new one, assign to state.
-            Process process;
-            if (rawEvent.Operation != null && (rawEvent.Operation.Equals(ProcessOperation.ProcessDefined) || rawEvent.Operation.Equals(ProcessOperation.ProcessCreate)))
+            Process process = null;
+            if (rawEvent.Operation != null)
             {
-                ProcessCreateDetails details = (ProcessCreateDetails)rawEvent.Details;
-                process = new Process
+                if (rawEvent.Operation.Equals(ProcessOperation.ProcessDefined) || rawEvent.Operation.Equals(ProcessOperation.ProcessCreate))
                 {
-                    ProcessId = details.ProcessId,
-                    ParentProcessId = details.ParentProcessId,
-                    AuthenticationId = details.AuthenticationId,
-                    SessionId = details.SessionId,
-                    Virtualized = details.Virtualized,
-                    IsProcess64bit = details.IsProcess64bit,
-                    Integrity = details.Integrity,
-                    IntegritySID = details.IntegritySID,
-                    User = details.User,
-                    UserSID = details.UserSID,
-                    ProcessName = details.ProcessName,
-                    CommandLine = details.CommandLine,
-                    StartTime = details.CreateTime,
-                };
-                AddProcess(process);
-                AssignSeqToProcess(process, rawEvent.ProcessSeq);
+                    ProcessCreateDetails details = (ProcessCreateDetails)rawEvent.Details;
+                    process = new Process
+                    {
+                        ProcessId = details.ProcessId,
+                        ParentProcessId = details.ParentProcessId,
+                        AuthenticationId = details.AuthenticationId,
+                        SessionId = details.SessionId,
+                        Virtualized = details.Virtualized,
+                        IsProcess64bit = details.IsProcess64bit,
+                        Integrity = details.Integrity,
+                        IntegritySID = details.IntegritySID,
+                        User = details.User,
+                        UserSID = details.UserSID,
+                        ProcessName = details.ProcessName,
+                        CommandLine = details.CommandLine,
+                        StartTime = details.CreateTime,
+                    };
+                    AddProcess(process);
+                    if(rawEvent.Operation.Equals(ProcessOperation.ProcessDefined))
+                    {
+                        AssignSeqToProcess(process, rawEvent.ProcessSeq);
+                    } else
+                    {
+                        AssignSeqToProcess(process, LastProcessSeq + 1);
+                    }
+                }
             }
-            else
+            if(process == null)
             {
                 process = GetProcessBySeq(rawEvent.ProcessSeq);
             }

@@ -41,23 +41,41 @@ namespace PSProcessMonitor
             procmonClient.ConfigureFlags(7);
             try
             {
-                foreach (var rawEvent in procmonClient.ReceiveEvents(cancellationToken))
+                foreach (RawEvent rawEvent in procmonClient.ReceiveEvents(cancellationToken))
                 {
-                    (Process process, Thread thread) = systemState.GetProcessAndThreadForEvent(rawEvent);
-                    DetailedEvent detailedEvent = new DetailedEvent
+                    RawEvent ev = rawEvent;
+                    if(rawEvent.IsPreEvent())
                     {
-                        SystemState = systemState,
-                        Process = process,
-                        Thread = thread,
-                        Class = rawEvent.Class,
-                        Operation = rawEvent.Operation,
-                        Duration = rawEvent.Duration,
-                        Timestamp = rawEvent.Timestamp,
-                        Status = rawEvent.Status,
-                        Details = rawEvent.Details,
-                        PostDetails = rawEvent.PostDetails,
-                    };
-                    yield return detailedEvent;
+                        preEventLog[rawEvent.Sequence] = rawEvent;
+                        continue;
+                    }
+                    if(rawEvent.Class.Equals(EventClass.Post))
+                    {
+                        RawEvent preEvent = preEventLog[rawEvent.Sequence];
+                        if(preEvent != null)
+                        {
+                            preEventLog.Remove(rawEvent.Sequence);
+                        }
+                        ev = preEvent;
+                    }
+                    if (ev != null)
+                    {
+                        (Process process, Thread thread) = systemState.GetProcessAndThreadForEvent(ev);
+                        DetailedEvent detailedEvent = new DetailedEvent
+                        {
+                            SystemState = systemState,
+                            Process = process,
+                            Thread = thread,
+                            Class = ev.Class,
+                            Operation = ev.Operation,
+                            Duration = ev.Duration,
+                            Timestamp = ev.Timestamp,
+                            Status = ev.Status,
+                            Details = ev.Details,
+                            PostDetails = ev.PostDetails,
+                        };
+                        yield return detailedEvent;
+                    }
                 }
             }
             finally
