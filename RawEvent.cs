@@ -71,8 +71,6 @@ namespace PSProcessMonitor
         public EventDetails Details;
         public EventDetails PostDetails;
 
-        public Process Process;
-
         private delegate EventDetails DetailsConstructor(DataStreamView dataStreamView);
 
         private static Dictionary<EventClass, Type> operationEnumMapping = new Dictionary<EventClass, Type>
@@ -130,11 +128,6 @@ namespace PSProcessMonitor
         public bool IsPreEvent()
         {
             return Class.Equals(EventClass.File) || Class.Equals(EventClass.Registry);
-        }
-
-        public void AssignProcess(Process process)
-        {
-            this.Process = process;
         }
     }
 }

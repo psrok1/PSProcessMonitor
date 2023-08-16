@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace PSProcessMonitor
@@ -68,6 +67,8 @@ namespace PSProcessMonitor
         internal ProcessCreateDetails(DataStreamView dataStreamView)
         {
             ProcessCreateStruct processCreateStruct = dataStreamView.ReadStructure<ProcessCreateStruct>();
+            // TODO: This could be passed via argument            
+            bool resolveSIDs = typeof(MemoryDataStreamView).IsAssignableFrom(dataStreamView.GetType());
 
             ProcessSeq = processCreateStruct.ProcessSeq;
             ProcessId = processCreateStruct.ProcessId;
@@ -81,17 +82,24 @@ namespace PSProcessMonitor
 
             if (processCreateStruct.UserSidLength != 0)
             {
-                IntPtr ptrSID = dataStreamView.Ptr;
+                byte[] userSID = dataStreamView.ReadBytes(processCreateStruct.UserSidLength);
+                GCHandle handle = GCHandle.Alloc(userSID, GCHandleType.Pinned);
+                IntPtr ptrSID = handle.AddrOfPinnedObject();
                 UserSID = NativeWin32.ConvertSidToString(ptrSID);
-                User = NativeWin32.ConvertSidToAccountName(ptrSID);
-                dataStreamView.Move(processCreateStruct.UserSidLength);
+                if (resolveSIDs)
+                {
+                    User = NativeWin32.ConvertSidToAccountName(ptrSID);
+                }
+                handle.Free();
             }
             if (processCreateStruct.IntegritySidLength != 0)
             {
-                IntPtr ptrSID = dataStreamView.Ptr;
+                byte[] integritySID = dataStreamView.ReadBytes(processCreateStruct.IntegritySidLength);
+                GCHandle handle = GCHandle.Alloc(integritySID, GCHandleType.Pinned);
+                IntPtr ptrSID = handle.AddrOfPinnedObject();
                 IntegritySID = NativeWin32.ConvertSidToString(ptrSID);
                 Integrity = NativeWin32.ConvertSidToAccountName(ptrSID);
-                dataStreamView.Move(processCreateStruct.IntegritySidLength);
+                handle.Free();
             }
             ProcessName = dataStreamView.ReadProcmonString(processCreateStruct.ProcessNameLength);
             CommandLine = dataStreamView.ReadProcmonString(processCreateStruct.CommandLineLength);

@@ -112,15 +112,11 @@ namespace PSProcessMonitor
             return structure;
         }
 
-        private static RawEvent ReadRawEvent(BinaryReader reader)
+        private static RawEvent ReadRawEvent(DataStreamView dataStreamView)
         {
-            EventHeaderStruct header = ReadStructure<EventHeaderStruct>(reader);
-            long[] stackTrace = new long[header.StackTraceLength];
-            for (int i = 0; i < header.StackTraceLength; i++)
-            {
-                stackTrace[i] = reader.ReadInt64();
-            }
-
+            EventHeaderStruct header = dataStreamView.ReadStructure<EventHeaderStruct>();
+            long[] stackTrace = dataStreamView.ReadInt64Values(header.StackTraceLength);
+            return new RawEvent(header, stackTrace, dataStreamView);
         }
 
         private void ReadStrings()
@@ -183,7 +179,7 @@ namespace PSProcessMonitor
                 fileStream.Seek((long)Header.ProcessesPtr + ptr, SeekOrigin.Begin);
                 using (BinaryReader binaryReader = new BinaryReader(fileStream, Encoding.Default, leaveOpen: true))
                 {
-                    PMLProcess64 processStruct = PMLReader.ReadStructure<PMLProcess64>(binaryReader);
+                    PMLProcess64 processStruct = ReadStructure<PMLProcess64>(binaryReader);
                     // TODO: Loading modules
                     Process process = new Process
                     {
@@ -205,7 +201,6 @@ namespace PSProcessMonitor
                         StartTime = ConvertTime(processStruct.StartTime),
                         EndTime = ConvertTime(processStruct.EndTime),
                     };
-                    ProcessesSet.AddProcess(process);
                     ProcessesSet.AssignSeqToProcess(process);
                 }
             }
@@ -242,7 +237,7 @@ namespace PSProcessMonitor
             return reader;
         }
 
-        public IEnumerable<RawEvent> ReadEvents()
+        private IEnumerable<RawEvent> ReadRawEvents()
         {
             uint eventsCount = Header.NumberOfEvents;
             int[] eventPtrs;
@@ -257,20 +252,41 @@ namespace PSProcessMonitor
                 }
             }
             fileStream.Seek((long)Header.EventsPtr, SeekOrigin.Begin);
-            using (BinaryReader binaryReader = new BinaryReader(fileStream, Encoding.Default, leaveOpen: true))
+            using (BinaryReader binaryReader = new BinaryReader(fileStream, Encoding.Unicode, leaveOpen: true))
             {
-                for(uint i = 0; i < eventsCount; i++)
+                FileDataStreamView dataStreamView = new FileDataStreamView(binaryReader);
+                for (uint i = 0; i < eventsCount; i++)
                 {
-                    long eventPtr = (long)eventPtrs[i];
-                    if(fileStream.Position != eventPtr)
+                    long eventPtr = eventPtrs[i];
+                    if (fileStream.Position != eventPtr)
                     {
                         // Dummy read in case we have missed some structure data.
                         // Maybe I should use Seek, but I don't want
                         // to invalidate internal buffer used by FileStream.
-                        binaryReader.ReadBytes((int)(eventPtr - fileStream.Position));
+                        dataStreamView.Move((int)(eventPtr - fileStream.Position));
                     }
-                    yield return ReadRawEvent(binaryReader);
+                    yield return ReadRawEvent(dataStreamView);
                 }
+            }
+        }
+
+        public IEnumerable<DetailedEvent> GetEvents()
+        {
+            foreach(RawEvent rawEvent in ReadRawEvents())
+            {
+                DetailedEvent detailedEvent = new DetailedEvent
+                {
+                    ProcessesSet = ProcessesSet,
+                    Process = ProcessesSet.GetProcessBySeq(rawEvent.ProcessSeq),
+                    Class = rawEvent.Class,
+                    Operation = rawEvent.Operation,
+                    Duration = rawEvent.Duration,
+                    Timestamp = rawEvent.Timestamp,
+                    Status = rawEvent.Status,
+                    Details = rawEvent.Details,
+                    PostDetails = rawEvent.PostDetails,
+                };
+                yield return detailedEvent;
             }
         }
 

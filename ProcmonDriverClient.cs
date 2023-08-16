@@ -35,11 +35,11 @@ namespace PSProcessMonitor
                 case (uint)HRESULT.ERROR_FILE_NOT_FOUND:
                     return "File not found: Process Monitor driver is not loaded.";
                 case (uint)HRESULT.ERROR_TOO_MANY_OPEN_FILES:
-                    return "Too many open files: Process Monitor is already active in your system. Shutdown existing procmon instances or reload driver.";
+                    return "Too many open files: Process Monitor is already active in your system. Shutdown existing procmon instances.";
                 case (uint)HRESULT.ERROR_ACCESS_DENIED:
                     return "Access denied: You need administrative rights to connect to Process Monitor driver.";
                 case (uint)HRESULT.ERROR_CONNECTION_COUNT_LIMIT:
-                    return "Connection count limit: Process Monitor is already active in your system. Shutdown existing procmon instances or reload driver.";
+                    return "Connection count limit: Process Monitor is already active in your system. Shutdown existing procmon instances.";
                 default:
                     return string.Format("Unknown HRESULT: 0x{0:X08}", hResult);
             }
@@ -56,7 +56,7 @@ namespace PSProcessMonitor
         // Actual max message size is 0x20000 but we need to include some extra for headers.
         // It's one-time allocation so let's make it rounded...
         public static readonly int MaxMessageSize = 0x21000;
-        private DataStream _stream;
+        private MemoryDataStream _stream;
         public int MessageLength { get; private set; }
 
         public DriverMessage(IntPtr messageBuffer)
@@ -73,7 +73,7 @@ namespace PSProcessMonitor
             }
 
             IntPtr eventBuffer = IntPtr.Add(messageBuffer, Marshal.SizeOf<DriverMessageHeader>());
-            _stream = new DataStream(eventBuffer, MessageLength);
+            _stream = new MemoryDataStream(eventBuffer, MessageLength);
         }
 
         public IEnumerable<RawEvent> ParseEvents()
@@ -82,7 +82,7 @@ namespace PSProcessMonitor
             {
                 EventHeaderStruct header = _stream.ReadStructure<EventHeaderStruct>();
                 long[] stackTrace = _stream.ReadInt64Values(header.StackTraceLength);
-                DataStreamView detailsData = _stream.ReadDataAsView(header.DetailsLength);
+                MemoryDataStreamView detailsData = _stream.ReadDataAsView(header.DetailsLength);
                 RawEvent rawEvent = new RawEvent(header, stackTrace, detailsData);
                 yield return rawEvent;
             }

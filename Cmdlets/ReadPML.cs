@@ -20,8 +20,13 @@ namespace PSProcessMonitor
 
         protected override void ProcessRecord()
         {
-            PMLReader reader = PMLReader.OpenFile(FileName);
-            WriteObject(reader);
+            using (PMLReader reader = PMLReader.OpenFile(FileName))
+            {
+                foreach (DetailedEvent ev in reader.GetEvents())
+                {
+                    WriteObject(ev);
+                }
+            }
         }
     }
 }

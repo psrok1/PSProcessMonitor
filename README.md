@@ -4,7 +4,65 @@ Powershell cmdlet replacement for Sysinternals Process Monitor GUI.
 
 ## Getting started
 
+1. For live monitoring, you still need the original Process Monitor binary as its contains the driver that acts as an actual monitor
+   Download it from the [official website](https://learn.microsoft.com/en-us/sysinternals/downloads/procmon)
+2. Run elevated Powershell
+3. Download Powershell module from [Releases tab](https://github.com/psrok1/PSProcessMonitor/releases/latest) and import it
 
+   ```
+   PS C:\Users\user> Import-Module PSProcessMonitor.dll
+   ```
+
+   If you want to install it permanently to be loaded automatically for every Powershell session, [follow the instructions from Microsoft Docs](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_modules?view=powershell-7.3#how-to-install-a-module).
+
+4. Load the Process Monitor driver. You can use `Enable-ProcessMonitor` cmdlet for that, providing a path to the original Process Monitor binary:
+
+   ```
+   PS C:\Users\user> Enable-ProcessMonitor Procmon.exe
+   ```
+
+   or just run Process Monitor yourself and close it. Driver will stay loaded in memory until next boot.
+
+5. Finally you can start live monitoring using `Read-ProcessMonitor` cmdlet
+
+   ```
+   PS C:\Users\user> Read-ProcessMonitor
+   ```
+
+Powershell will be clogged with events very quickly, so don't keep it running for too long. Read further for instructions how to make something of value out of it.
+
+## Reading events from PML files
+
+If you want to process events from pre-recorded PML files, you don't need an active driver nor Powershell elevation.
+
+Just use `Read-PML` cmdlet. It returns events from PML file in the same format as `Read-ProcessMonitor`
+
+```
+PS C:\Users\user> Read-PML Logfile.PML
+```
+
+## How to use it?
+
+Stream of emitted events (`PSProcessMonitor.DetailedEvent` objects) have the following structure:
+
+- `Process`: Information about process that performed the operation described in the event
+- `Class`: Event type (Process, Registry, File, Profiling, Network)
+- `Operation`: Event subtype specific for operation class
+- `Duration`: Duration of the operation
+- `Timestamp`: Timestamp of the operation
+- `Status`: Status of the operation
+- `Details`: Details about the arguments of the operation
+- `PostDetails`: Details about the result of the operation (if available)
+
+TODO
+
+## Compatibility and known issues
+
+- Currently module works only for 64-bit Windows (both live monitoring and recorded PML files)
+- Live monitoring doesn't track network events, as they're not tracked by the driver. Process Monitor uses Event Tracing for Windows (ETW) mechanism for that.
+- Project was tested with Process Monitor v3.93, but any version with the following numbers should work well:
+  - PML in version 9 (first bytes of the PML file should be `50 4D 4C 5F 09 00 00 00`)
+  - Driver in version 24 (PROCMON24, take a look at `fltmc` output when minifilter driver is loaded)
 
 ## Who needs this?
 

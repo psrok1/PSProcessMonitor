@@ -1,41 +1,121 @@
 ﻿using System;
+using System.IO;
+using System.Management.Automation.Host;
 using System.Runtime.InteropServices;
+using System.Runtime.Remoting.Messaging;
 using System.Text;
 
 namespace PSProcessMonitor
 {
+    public abstract class DataStreamView
+    {
+        public abstract void Move(int offset);
+        public abstract T ReadStructure<T>();
+        public abstract byte[] ReadBytes(int count);
+        public abstract long[] ReadInt64Values(int count);
+        public abstract string ReadUnicodeString(int charLength);
+        public string ReadProcmonString(ushort length)
+        {
+            // MSB determines type of the string: 1 - ASCII, 0 - UTF-16
+            int charLength = length & 0x7FFF;
+            bool isAscii = (length & 0x8000) != 0;
+            if (isAscii)
+            {
+                return Encoding.ASCII.GetString(this.ReadBytes(charLength));
+            }
+            else
+            {
+                return ReadUnicodeString(charLength);
+            }
+        }
+    }
+
+    public class FileDataStreamView : DataStreamView
+    {
+        private BinaryReader reader;
+
+        public FileDataStreamView(BinaryReader reader)
+        {
+            // BinaryReader must be opened with Encoding.Unicode
+            // I can't check it here though
+            this.reader = reader;
+        }
+        public override void Move(int offset)
+        {
+            reader.ReadBytes(offset);
+        }
+        public override T ReadStructure<T>()
+        {
+            byte[] buffer = ReadBytes(Marshal.SizeOf<T>());
+            GCHandle handle = GCHandle.Alloc(buffer, GCHandleType.Pinned);
+            T structure = Marshal.PtrToStructure<T>(handle.AddrOfPinnedObject());
+            handle.Free();
+            return structure;
+        }
+        public override byte[] ReadBytes(int count)
+        {
+            byte[] buffer = new byte[count];
+            return reader.ReadBytes(buffer.Length);
+        }
+        public override long[] ReadInt64Values(int count)
+        {
+            long[] values = new long[count];
+            for(int i = 0; i < count; i++)
+            {
+                values[i] = reader.ReadInt64();
+            }
+            return values;
+        }
+        public override string ReadUnicodeString(int charLength)
+        {
+            // I can't check encoding of BinaryReader, so it's safer to make a new one
+            using(BinaryReader ureader = new BinaryReader(reader.BaseStream, Encoding.Unicode, leaveOpen: true))
+            {
+                return new string(ureader.ReadChars(charLength));
+            }
+        }
+    }
+
     /**
      * <summary>
      * Serves stream memory view over unowned unmanaged memory block, optionally backed by DataStream object.
      * It doesn't hold ownership on underlying memory, so it doesn't offer IDisposable interface.
      * </summary>
      */
-    public class DataStreamView
+    public class MemoryDataStreamView : DataStreamView
     {
 #pragma warning disable IDE0052
         // Keeps reference to the parent DataStream that holds the actual unmanaged memory
-        private DataStream _parentRef;
+        // Although I'm not sure if it's necessary
+        private MemoryDataStream _parentRef;
 #pragma warning restore IDE0052
         public IntPtr Ptr { get; private set; }
         public IntPtr InitialPtr { get; private set; }
         public int Size { get; private set; }
-        public int InitialSize { get; private set; }
 
-        public DataStreamView(IntPtr ptr, int size)
+        public MemoryDataStreamView(IntPtr ptr, int size)
         {
             InitialPtr = Ptr = ptr;
-            InitialSize = Size = size;
+            Size = size;
         }
 
-        private DataStreamView(IntPtr ptr, int size, DataStream parent) : this(ptr, size)
+        private MemoryDataStreamView(IntPtr ptr, int size, MemoryDataStream parent) : this(ptr, size)
         {
             _parentRef = parent;
         }
 
-        protected DataStreamView ReadDataAsView(int count, DataStream parent)
+        protected virtual void CheckHasBytes(int howMany)
+        {
+            if (Size < howMany)
+            {
+                throw new ArgumentOutOfRangeException(nameof(howMany), $"Tried to read {howMany} but only {Size} bytes left");
+            }
+        }
+
+        protected MemoryDataStreamView ReadDataAsView(int count, MemoryDataStream parent)
         {
             CheckHasBytes(count);
-            DataStreamView view = new DataStreamView(Ptr, count, parent);
+            MemoryDataStreamView view = new MemoryDataStreamView(Ptr, count, parent);
             MoveUnsafe(count);
             return view;
         }
@@ -50,26 +130,18 @@ namespace PSProcessMonitor
             Size -= offset;
         }
 
-        protected virtual void CheckHasBytes(int howMany)
-        {
-            if (Size < howMany)
-            {
-                throw new ArgumentOutOfRangeException(nameof(howMany), $"Tried to read {howMany} but only {Size} bytes left");
-            }
-        }
-
         public bool End()
         {
             return Size == 0;
         }
 
-        public void Move(int offset)
+        public override void Move(int offset)
         {
             CheckHasBytes(offset);
             MoveUnsafe(offset);
         }
 
-        public T ReadStructure<T>()
+        public override T ReadStructure<T>()
         {
             int structSize = Marshal.SizeOf<T>();
             CheckHasBytes(structSize);
@@ -78,7 +150,7 @@ namespace PSProcessMonitor
             return obj;
         }
 
-        public byte[] ReadBytes(int count)
+        public override byte[] ReadBytes(int count)
         {
             CheckHasBytes(count);
             byte[] values = new byte[count];
@@ -87,7 +159,7 @@ namespace PSProcessMonitor
             return values;
         }
 
-        public long[] ReadInt64Values(int count)
+        public override long[] ReadInt64Values(int count)
         {
             int structSize = Marshal.SizeOf<long>() * count;
             CheckHasBytes(structSize);
@@ -97,7 +169,7 @@ namespace PSProcessMonitor
             return values;
         }
 
-        public string ReadUnicodeString(int charLength)
+        public override string ReadUnicodeString(int charLength)
         {
             string decoded = Marshal.PtrToStringUni(Ptr, charLength);
             // I think this could be done better:
@@ -108,20 +180,6 @@ namespace PSProcessMonitor
             Move(Encoding.Unicode.GetBytes(decoded).Length);
             return decoded;
         }
-
-        public string ReadProcmonString(ushort length)
-        {
-            // MSB determines type of the string: 1 - ASCII, 0 - UTF-16
-            int charLength = length & 0x7FFF;
-            bool isAscii = (length & 0x8000) != 0;
-            if(isAscii)
-            {
-                return Encoding.ASCII.GetString(this.ReadBytes(charLength));
-            } else
-            {
-                return ReadUnicodeString(charLength);
-            }
-        }
     }
 
     /**
@@ -131,7 +189,7 @@ namespace PSProcessMonitor
      * and frees the underlying memory during disposal.
      * </summary>
      */
-    public sealed class DataStream : DataStreamView, IDisposable
+    public sealed class MemoryDataStream : MemoryDataStreamView, IDisposable
     {
         private bool _disposed = false;
 
@@ -145,9 +203,9 @@ namespace PSProcessMonitor
             return ownPtr;
         }
 
-        public DataStream(IntPtr ptr, int size, bool makeCopy = true) : base(makeCopy ? CopyFromPtr(ptr, size) : ptr, size) { }
+        public MemoryDataStream(IntPtr ptr, int size, bool makeCopy = true) : base(makeCopy ? CopyFromPtr(ptr, size) : ptr, size) { }
 
-        public DataStream(int size) : this(Marshal.AllocHGlobal(size), size, false) { }
+        public MemoryDataStream(int size) : this(Marshal.AllocHGlobal(size), size, false) { }
 
         protected override void CheckHasBytes(int howMany)
         {
@@ -155,8 +213,7 @@ namespace PSProcessMonitor
             base.CheckHasBytes(howMany);
         }
 
-
-        public DataStreamView ReadDataAsView(int count)
+        public MemoryDataStreamView ReadDataAsView(int count)
         {
             return ReadDataAsView(count, this);
         }
@@ -197,7 +254,6 @@ namespace PSProcessMonitor
         }
 
         public StructureReader(int size) : this(Marshal.AllocHGlobal(size), size) { }
-
 
         public StructureReader() : this(Marshal.SizeOf<T>()) { }
 

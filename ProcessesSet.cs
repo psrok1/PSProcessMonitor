@@ -50,9 +50,9 @@ namespace PSProcessMonitor
             ReportError(message, (uint)Marshal.GetHRForLastWin32Error());
         }
 
-        private DataStream ReadProcessMemory(SafeProcessHandle handle, IntPtr address, int structSize)
+        private MemoryDataStream ReadProcessMemory(SafeProcessHandle handle, IntPtr address, int structSize)
         {
-            DataStream dataStream = new DataStream(structSize);
+            MemoryDataStream dataStream = new MemoryDataStream(structSize);
             if (!NativeWin32.ReadProcessMemory(handle, address, dataStream.InitialPtr, structSize, out int _))
             {
                 dataStream.Dispose();
@@ -85,7 +85,7 @@ namespace PSProcessMonitor
                 return null;
             }
 
-            DataStream dataStream = ReadProcessMemory(handle, address, maximumLength);
+            MemoryDataStream dataStream = ReadProcessMemory(handle, address, maximumLength);
             if (dataStream == null)
             {
                 return null;
@@ -348,29 +348,16 @@ namespace PSProcessMonitor
      **/
     public class ProcessesSet
     {
-        public Dictionary<int, Process> ProcessById;
         public Dictionary<int, Process> ProcessBySeq;
 
         public ProcessesSet(
-            Dictionary<int, Process> processById,
             Dictionary<int, Process> processBySeq)
         {
-            ProcessById = processById;
             ProcessBySeq = processBySeq;
         }
 
-        public ProcessesSet() : this(new Dictionary<int, Process>(), new Dictionary<int, Process>())
+        public ProcessesSet() : this(new Dictionary<int, Process>())
         { }
-
-        public Process GetProcessById(int processId)
-        {
-            if (ProcessById.TryGetValue(processId, out Process process))
-            {
-                return process;
-            }
-
-            return null;
-        }
 
         public Process GetProcessBySeq(int processSeq)
         {
@@ -385,16 +372,6 @@ namespace PSProcessMonitor
         public void AssignSeqToProcess(Process process)
         {
             ProcessBySeq[process.ProcessSeq] = process;
-        }
-
-        public void AddProcess(Process process)
-        {
-            ProcessById[process.ProcessId] = process;
-        }
-
-        public void FinishProcess(Process process)
-        {
-            ProcessById.Remove(process.ProcessId);
         }
 
         public static bool TryEnableDebugPrivilege()
@@ -436,7 +413,6 @@ namespace PSProcessMonitor
                 {
                     ProcessCreateDetails details = (ProcessCreateDetails)rawEvent.Details;
                     process = details.MakeProcess();
-                    AddProcess(process);
                     AssignSeqToProcess(process);
                 }
             }
@@ -448,7 +424,6 @@ namespace PSProcessMonitor
             if (rawEvent.Operation != null && rawEvent.Operation.Equals(ProcessOperation.ProcessExit))
             {
                 process.EndTime = rawEvent.Timestamp;
-                FinishProcess(process);
             }
             return process;
         }

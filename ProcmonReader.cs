@@ -52,8 +52,7 @@ namespace PSProcessMonitor
                     }
                     else
                     {
-                        Process process = processesSet.AssignProcessForEvent(ev);
-                        rawEvent.AssignProcess(process);
+                        processesSet.AssignProcessForEvent(ev);
                         if (rawEvent.IsPreEvent())
                         {
                             preEventLog[rawEvent.Sequence] = rawEvent;
@@ -65,7 +64,7 @@ namespace PSProcessMonitor
                         DetailedEvent detailedEvent = new DetailedEvent
                         {
                             ProcessesSet = processesSet,
-                            Process = ev.Process,
+                            Process = processesSet.GetProcessBySeq(ev.ProcessSeq),
                             Class = ev.Class,
                             Operation = ev.Operation,
                             Duration = ev.Duration,
