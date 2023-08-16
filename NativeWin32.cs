@@ -1,5 +1,7 @@
 ﻿using Microsoft.Win32.SafeHandles;
 using System;
+using System.Management.Automation.Host;
+using System.Runtime.CompilerServices;
 using System.Runtime.ConstrainedExecution;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
@@ -55,6 +57,268 @@ namespace PSProcessMonitor
         {
             return Marshal.PtrToStringUni(BufferPtr);
         }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IMAGE_FILE_HEADER
+    {
+        public UInt16 Machine;
+        public UInt16 NumberOfSections;
+        public UInt32 TimeDateStamp;
+        public UInt32 PointerToSymbolTable;
+        public UInt32 NumberOfSymbols;
+        public UInt16 SizeOfOptionalHeader;
+        public UInt16 Characteristics;
+    }
+    public enum MachineType : ushort
+    {
+        I386 = 0x014c,
+        AMD64 = 0x8664,
+    }
+    public enum MagicType : ushort
+    {
+        IMAGE_NT_OPTIONAL_HDR32_MAGIC = 0x10b,
+        IMAGE_NT_OPTIONAL_HDR64_MAGIC = 0x20b,
+    }
+    public enum SubSystemType : ushort
+    {
+        IMAGE_SUBSYSTEM_UNKNOWN = 0,
+        IMAGE_SUBSYSTEM_NATIVE = 1,
+        IMAGE_SUBSYSTEM_WINDOWS_GUI = 2,
+        IMAGE_SUBSYSTEM_WINDOWS_CUI = 3,
+        IMAGE_SUBSYSTEM_POSIX_CUI = 7,
+        IMAGE_SUBSYSTEM_WINDOWS_CE_GUI = 9,
+        IMAGE_SUBSYSTEM_EFI_APPLICATION = 10,
+        IMAGE_SUBSYSTEM_EFI_BOOT_SERVICE_DRIVER = 11,
+        IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER = 12,
+        IMAGE_SUBSYSTEM_EFI_ROM = 13,
+        IMAGE_SUBSYSTEM_XBOX = 14,
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IMAGE_DATA_DIRECTORY
+    {
+        public UInt32 VirtualAddress;
+        public UInt32 Size;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct IMAGE_OPTIONAL_HEADER32
+    {
+        [FieldOffset(0)]
+        public MagicType Magic;
+        [FieldOffset(2)]
+        public byte MajorLinkerVersion;
+        [FieldOffset(3)]
+        public byte MinorLinkerVersion;
+        [FieldOffset(4)]
+        public uint SizeOfCode;
+        [FieldOffset(8)]
+        public uint SizeOfInitializedData;
+        [FieldOffset(12)]
+        public uint SizeOfUninitializedData;
+        [FieldOffset(16)]
+        public uint AddressOfEntryPoint;
+        [FieldOffset(20)]
+        public uint BaseOfCode;
+        // PE32 contains this additional field
+        [FieldOffset(24)]
+        public uint BaseOfData;
+        [FieldOffset(28)]
+        public uint ImageBase;
+        [FieldOffset(32)]
+        public uint SectionAlignment;
+        [FieldOffset(36)]
+        public uint FileAlignment;
+        [FieldOffset(40)]
+        public ushort MajorOperatingSystemVersion;
+        [FieldOffset(42)]
+        public ushort MinorOperatingSystemVersion;
+        [FieldOffset(44)]
+        public ushort MajorImageVersion;
+        [FieldOffset(46)]
+        public ushort MinorImageVersion;
+        [FieldOffset(48)]
+        public ushort MajorSubsystemVersion;
+        [FieldOffset(50)]
+        public ushort MinorSubsystemVersion;
+        [FieldOffset(52)]
+        public uint Win32VersionValue;
+        [FieldOffset(56)]
+        public uint SizeOfImage;
+        [FieldOffset(60)]
+        public uint SizeOfHeaders;
+        [FieldOffset(64)]
+        public uint CheckSum;
+        [FieldOffset(68)]
+        public SubSystemType Subsystem;
+        [FieldOffset(70)]
+        public ushort DllCharacteristics;
+        [FieldOffset(72)]
+        public uint SizeOfStackReserve;
+        [FieldOffset(76)]
+        public uint SizeOfStackCommit;
+        [FieldOffset(80)]
+        public uint SizeOfHeapReserve;
+        [FieldOffset(84)]
+        public uint SizeOfHeapCommit;
+        [FieldOffset(88)]
+        public uint LoaderFlags;
+        [FieldOffset(92)]
+        public uint NumberOfRvaAndSizes;
+        [FieldOffset(96)]
+        public IMAGE_DATA_DIRECTORY ExportTable;
+        [FieldOffset(104)]
+        public IMAGE_DATA_DIRECTORY ImportTable;
+        [FieldOffset(112)]
+        public IMAGE_DATA_DIRECTORY ResourceTable;
+        [FieldOffset(120)]
+        public IMAGE_DATA_DIRECTORY ExceptionTable;
+        [FieldOffset(128)]
+        public IMAGE_DATA_DIRECTORY CertificateTable;
+        [FieldOffset(136)]
+        public IMAGE_DATA_DIRECTORY BaseRelocationTable;
+        [FieldOffset(144)]
+        public IMAGE_DATA_DIRECTORY Debug;
+        [FieldOffset(152)]
+        public IMAGE_DATA_DIRECTORY Architecture;
+        [FieldOffset(160)]
+        public IMAGE_DATA_DIRECTORY GlobalPtr;
+        [FieldOffset(168)]
+        public IMAGE_DATA_DIRECTORY TLSTable;
+        [FieldOffset(176)]
+        public IMAGE_DATA_DIRECTORY LoadConfigTable;
+        [FieldOffset(184)]
+        public IMAGE_DATA_DIRECTORY BoundImport;
+        [FieldOffset(192)]
+        public IMAGE_DATA_DIRECTORY IAT;
+        [FieldOffset(200)]
+        public IMAGE_DATA_DIRECTORY DelayImportDescriptor;
+        [FieldOffset(208)]
+        public IMAGE_DATA_DIRECTORY CLRRuntimeHeader;
+        [FieldOffset(216)]
+        public IMAGE_DATA_DIRECTORY Reserved;
+    }
+    [StructLayout(LayoutKind.Explicit)]
+    public struct IMAGE_OPTIONAL_HEADER64
+    {
+        [FieldOffset(0)]
+        public MagicType Magic;
+        [FieldOffset(2)]
+        public byte MajorLinkerVersion;
+        [FieldOffset(3)]
+        public byte MinorLinkerVersion;
+        [FieldOffset(4)]
+        public uint SizeOfCode;
+        [FieldOffset(8)]
+        public uint SizeOfInitializedData;
+        [FieldOffset(12)]
+        public uint SizeOfUninitializedData;
+        [FieldOffset(16)]
+        public uint AddressOfEntryPoint;
+        [FieldOffset(20)]
+        public uint BaseOfCode;
+        [FieldOffset(24)]
+        public ulong ImageBase;
+        [FieldOffset(32)]
+        public uint SectionAlignment;
+        [FieldOffset(36)]
+        public uint FileAlignment;
+        [FieldOffset(40)]
+        public ushort MajorOperatingSystemVersion;
+        [FieldOffset(42)]
+        public ushort MinorOperatingSystemVersion;
+        [FieldOffset(44)]
+        public ushort MajorImageVersion;
+        [FieldOffset(46)]
+        public ushort MinorImageVersion;
+        [FieldOffset(48)]
+        public ushort MajorSubsystemVersion;
+        [FieldOffset(50)]
+        public ushort MinorSubsystemVersion;
+        [FieldOffset(52)]
+        public uint Win32VersionValue;
+        [FieldOffset(56)]
+        public uint SizeOfImage;
+        [FieldOffset(60)]
+        public uint SizeOfHeaders;
+        [FieldOffset(64)]
+        public uint CheckSum;
+        [FieldOffset(68)]
+        public SubSystemType Subsystem;
+        [FieldOffset(70)]
+        public ushort DllCharacteristics;
+        [FieldOffset(72)]
+        public ulong SizeOfStackReserve;
+        [FieldOffset(80)]
+        public ulong SizeOfStackCommit;
+        [FieldOffset(88)]
+        public ulong SizeOfHeapReserve;
+        [FieldOffset(96)]
+        public ulong SizeOfHeapCommit;
+        [FieldOffset(104)]
+        public uint LoaderFlags;
+        [FieldOffset(108)]
+        public uint NumberOfRvaAndSizes;
+        [FieldOffset(112)]
+        public IMAGE_DATA_DIRECTORY ExportTable;
+        [FieldOffset(120)]
+        public IMAGE_DATA_DIRECTORY ImportTable;
+        [FieldOffset(128)]
+        public IMAGE_DATA_DIRECTORY ResourceTable;
+        [FieldOffset(136)]
+        public IMAGE_DATA_DIRECTORY ExceptionTable;
+        [FieldOffset(144)]
+        public IMAGE_DATA_DIRECTORY CertificateTable;
+        [FieldOffset(152)]
+        public IMAGE_DATA_DIRECTORY BaseRelocationTable;
+        [FieldOffset(160)]
+        public IMAGE_DATA_DIRECTORY Debug;
+        [FieldOffset(168)]
+        public IMAGE_DATA_DIRECTORY Architecture;
+        [FieldOffset(176)]
+        public IMAGE_DATA_DIRECTORY GlobalPtr;
+        [FieldOffset(184)]
+        public IMAGE_DATA_DIRECTORY TLSTable;
+        [FieldOffset(192)]
+        public IMAGE_DATA_DIRECTORY LoadConfigTable;
+        [FieldOffset(200)]
+        public IMAGE_DATA_DIRECTORY BoundImport;
+        [FieldOffset(208)]
+        public IMAGE_DATA_DIRECTORY IAT;
+        [FieldOffset(216)]
+        public IMAGE_DATA_DIRECTORY DelayImportDescriptor;
+        [FieldOffset(224)]
+        public IMAGE_DATA_DIRECTORY CLRRuntimeHeader;
+        [FieldOffset(232)]
+        public IMAGE_DATA_DIRECTORY Reserved;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IMAGE_RESOURCE_DIRECTORY
+    {
+        public uint Characteristics;
+        public uint TimeDateStamp;
+        public ushort MajorVersion;
+        public ushort MinorVersion;
+        public ushort NumberOfNamedEntries;
+        public ushort NumberOfIdEntries;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IMAGE_RESOURCE_DIRECTORY_ENTRY
+    {
+        public uint Name;
+        public uint OffsetToData;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IMAGE_RESOURCE_DATA_ENTRY
+    {
+        public uint OffsetToData;
+        public uint Size;
+        public uint CodePage;
+        public uint Reserved;
     }
 
     public enum SYSTEM_INFORMATION_CLASS
@@ -280,6 +544,53 @@ namespace PSProcessMonitor
         TOKEN_ADJUST_PRIVILEGES = 0x0020,
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct OSVERSIONINFOEXW
+    {
+        public int dwOSVersionInfoSize;
+        public int dwMajorVersion;
+        public int dwMinorVersion;
+        public int dwBuildNumber;
+        public int dwPlatformId;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)]
+        public string szCSDVersion;
+        public UInt16 wServicePackMajor;
+        public UInt16 wServicePackMinor;
+        public UInt16 wSuiteMask;
+        public byte wProductType;
+        public byte wReserved;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SYSTEM_INFO
+    {
+        public ushort wProcessorArchitecture;
+        public ushort wReserved;
+        public uint dwPageSize;
+        public IntPtr lpMinimumApplicationAddress;
+        public IntPtr lpMaximumApplicationAddress;
+        public UIntPtr dwActiveProcessorMask;
+        public uint dwNumberOfProcessors;
+        public uint dwProcessorType;
+        public uint dwAllocationGranularity;
+        public ushort wProcessorLevel;
+        public ushort wProcessorRevision;
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MEMORYSTATUSEX
+    {
+        public uint dwLength;
+        public uint dwMemoryLoad;
+        public ulong ullTotalPhys;
+        public ulong ullAvailPhys;
+        public ulong ullTotalPageFile;
+        public ulong ullAvailPageFile;
+        public ulong ullTotalVirtual;
+        public ulong ullAvailVirtual;
+        public ulong ullAvailExtendedVirtual;
+    }
+
     internal class NativeWin32
     {
         internal static string ConvertSidToString(IntPtr pSID)
@@ -439,5 +750,17 @@ namespace PSProcessMonitor
             int nSize,
             out int lpNumberOfBytesRead
         );
+
+        [DllImport("kernel32")]
+        internal static extern void GetNativeSystemInfo(ref SYSTEM_INFO lpSystemInfo);
+
+        [DllImport("kernel32", CharSet = CharSet.Unicode, EntryPoint = "GetVersionExW", SetLastError = true)]
+        internal static extern bool GetVersionEx(ref OSVERSIONINFOEXW osvi);
+
+        [DllImport("kernel32", SetLastError = true)]
+        internal static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        internal static extern bool GetComputerNameW(StringBuilder lpBuffer, ref uint lpnSize);
     }
 }

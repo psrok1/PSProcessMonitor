@@ -44,28 +44,35 @@ namespace PSProcessMonitor
                 foreach (RawEvent rawEvent in procmonClient.ReceiveEvents(cancellationToken))
                 {
                     RawEvent ev = rawEvent;
-                    if(rawEvent.IsPreEvent())
+                    if (rawEvent.Class.Equals(EventClass.Post))
                     {
-                        preEventLog[rawEvent.Sequence] = rawEvent;
-                        continue;
-                    }
-                    if(rawEvent.Class.Equals(EventClass.Post))
-                    {
-                        RawEvent preEvent = preEventLog[rawEvent.Sequence];
-                        if(preEvent != null)
+                        RawEvent completedEvent = preEventLog[rawEvent.Sequence];
+                        if (completedEvent != null)
                         {
                             preEventLog.Remove(rawEvent.Sequence);
+                        } else
+                        {
+                            // todo: got post event for unknown pre event
                         }
-                        ev = preEvent;
+                        ev = completedEvent;
+                    }
+                    else
+                    {
+                        (Process process, Thread thread) = systemState.AssignProcessAndThreadForEvent(ev);
+                        rawEvent.AssignProcessAndThread(process, thread);
+                        if (rawEvent.IsPreEvent())
+                        {
+                            preEventLog[rawEvent.Sequence] = rawEvent;
+                            continue;
+                        }
                     }
                     if (ev != null)
                     {
-                        (Process process, Thread thread) = systemState.GetProcessAndThreadForEvent(ev);
                         DetailedEvent detailedEvent = new DetailedEvent
                         {
                             SystemState = systemState,
-                            Process = process,
-                            Thread = thread,
+                            Process = ev.Process,
+                            Thread = ev.Thread,
                             Class = ev.Class,
                             Operation = ev.Operation,
                             Duration = ev.Duration,

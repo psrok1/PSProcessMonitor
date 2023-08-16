@@ -40,14 +40,26 @@
     <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Cmdlets\ReadPML.cs" />
+    <Compile Include="Cmdlets\WritePML.cs" />
     <Compile Include="DataStream.cs" />
-    <Compile Include="GetSystemState.cs" />
+    <Compile Include="DriverLoader.cs" />
+    <Compile Include="EventOperations\FilesystemOperation.cs" />
+    <Compile Include="Cmdlets\GetSystemState.cs" />
+    <Compile Include="EventOperations\GenericOperationEnums.cs" />
+    <Compile Include="Cmdlets\EnableProcessMonitor.cs" />
     <Compile Include="NativeWin32.cs" />
+    <Compile Include="EventOperations\NetworkOperation.cs" />
+    <Compile Include="EventOperations\ProcessOperation.cs" />
+    <Compile Include="PMLReader.cs" />
     <Compile Include="ProcmonReader.cs" />
+    <Compile Include="EventOperations\ProfilingOperation.cs" />
     <Compile Include="RawEvent.cs" />
-    <Compile Include="ReadProcessMonitor.cs" />
+    <Compile Include="Cmdlets\ReadProcessMonitor.cs" />
     <Compile Include="ProcmonDriverClient.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="EventOperations\RegistryOperation.cs" />
+    <Compile Include="SystemInfo.cs" />
     <Compile Include="SystemState.cs" />
   </ItemGroup>
   <ItemGroup>

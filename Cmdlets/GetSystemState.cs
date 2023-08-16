@@ -14,11 +14,15 @@ namespace PSProcessMonitor
             {
                 WriteWarning("Can't enable debug privilege");
             }
+            SystemInfo systemInfo = SystemInfo.GetComputerInfo();
+            WriteObject(systemInfo);
+            /*
             SystemState systemState = SystemState.GetCurrentState();
             foreach(var process in systemState.ProcessById.Values)
             {
                 WriteObject(process);
             }
+            */
         }
     }
 }

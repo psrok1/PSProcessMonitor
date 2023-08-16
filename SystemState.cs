@@ -12,6 +12,7 @@ namespace PSProcessMonitor
 {
     public class Process
     {
+        public int ProcessSeq;
         public int ProcessId;
         public int ParentProcessId;
         public string AuthenticationId;
@@ -28,8 +29,8 @@ namespace PSProcessMonitor
         public string Company;
         public string Version;
         public string Description;
-        public DateTime StartTime;
-        public DateTime EndTime;
+        public DateTime? StartTime;
+        public DateTime? EndTime;
 
         public List<string> Errors = new List<string>();
 
@@ -253,7 +254,7 @@ namespace PSProcessMonitor
             }
         }
 
-        private void FetchProcessDetailsFromVersionInfo(string imagePath)
+        internal void FetchProcessDetailsFromVersionInfo(string imagePath)
         {
             try
             {
@@ -268,7 +269,7 @@ namespace PSProcessMonitor
             }
         }
 
-        public bool FetchProcessDetails()
+        internal bool FetchProcessDetails()
         {
             ProcessAccessFlags accessFlags =
                 ProcessAccessFlags.PROCESS_QUERY_INFORMATION |
@@ -371,7 +372,6 @@ namespace PSProcessMonitor
         public Dictionary<int, Process> ProcessById;
         public Dictionary<int, Thread> ThreadById;
         public Dictionary<int, Process> ProcessBySeq;
-        public int LastProcessSeq = 0;
 
         public SystemState(
             Dictionary<int, Process> processById,
@@ -388,31 +388,8 @@ namespace PSProcessMonitor
             Dictionary<int, Thread> threadById) : this(processById, threadById, new Dictionary<int, Process>())
         { }
 
-        public Process GetProcessForEvent(int processSeq, int threadId)
-        {
-            Process process = this.GetProcessBySeq(processSeq);
-            if (process == null)
-            {
-                Thread thread = this.GetThreadById(threadId);
-                if (thread == null)
-                {
-                    // Inconsistent state: thread doesn't exist
-                    throw new InconsistentSystemStateException(
-                        string.Format("Thread {0} is referenced by event but is not known by system state", threadId)
-                    );
-                }
-                process = this.GetProcessById(thread.ProcessId);
-                if (process == null)
-                {
-                    // Inconsistent state: thread exist but process doesn't
-                    throw new InconsistentSystemStateException(
-                        string.Format("Thread {0} exist but related process {1} is not known by system state", threadId, thread.ProcessId)
-                    );
-                }
-                this.AssignSeqToProcess(process, processSeq);
-            }
-            return process;
-        }
+        public SystemState() : this(new Dictionary<int, Process>(), new Dictionary<int, Thread>(), new Dictionary<int, Process>())
+        { }
 
         public Process GetProcessById(int processId)
         {
@@ -444,11 +421,9 @@ namespace PSProcessMonitor
             return null;
         }
 
-        public void AssignSeqToProcess(Process process, int processSeq)
+        public void AssignSeqToProcess(Process process)
         {
-            ProcessBySeq[processSeq] = process;
-            if(processSeq > LastProcessSeq)
-                LastProcessSeq = processSeq;
+            ProcessBySeq[process.ProcessSeq] = process;
         }
 
         public void AddProcess(Process process)
@@ -566,7 +541,7 @@ namespace PSProcessMonitor
             return new SystemState(processById, threadById);
         }
 
-        public (Process process, Thread thread) GetProcessAndThreadForEvent(RawEvent rawEvent)
+        public (Process process, Thread thread) AssignProcessAndThreadForEvent(RawEvent rawEvent)
         {
             // Get process. If new one, assign to state.
             Process process = null;
@@ -575,30 +550,9 @@ namespace PSProcessMonitor
                 if (rawEvent.Operation.Equals(ProcessOperation.ProcessDefined) || rawEvent.Operation.Equals(ProcessOperation.ProcessCreate))
                 {
                     ProcessCreateDetails details = (ProcessCreateDetails)rawEvent.Details;
-                    process = new Process
-                    {
-                        ProcessId = details.ProcessId,
-                        ParentProcessId = details.ParentProcessId,
-                        AuthenticationId = details.AuthenticationId,
-                        SessionId = details.SessionId,
-                        Virtualized = details.Virtualized,
-                        IsProcess64bit = details.IsProcess64bit,
-                        Integrity = details.Integrity,
-                        IntegritySID = details.IntegritySID,
-                        User = details.User,
-                        UserSID = details.UserSID,
-                        ProcessName = details.ProcessName,
-                        CommandLine = details.CommandLine,
-                        StartTime = details.CreateTime,
-                    };
+                    process = details.MakeProcess();
                     AddProcess(process);
-                    if(rawEvent.Operation.Equals(ProcessOperation.ProcessDefined))
-                    {
-                        AssignSeqToProcess(process, rawEvent.ProcessSeq);
-                    } else
-                    {
-                        AssignSeqToProcess(process, LastProcessSeq + 1);
-                    }
+                    AssignSeqToProcess(process);
                 }
             }
             if(process == null)
