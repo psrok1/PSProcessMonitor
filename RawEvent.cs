@@ -72,7 +72,6 @@ namespace PSProcessMonitor
         public EventDetails PostDetails;
 
         public Process Process;
-        public Thread Thread;
 
         private delegate EventDetails DetailsConstructor(DataStreamView dataStreamView);
 
@@ -133,10 +132,9 @@ namespace PSProcessMonitor
             return Class.Equals(EventClass.File) || Class.Equals(EventClass.Registry);
         }
 
-        public void AssignProcessAndThread(Process process, Thread thread)
+        public void AssignProcess(Process process)
         {
             this.Process = process;
-            this.Thread = thread;
         }
     }
 }

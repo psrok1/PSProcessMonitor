@@ -46,7 +46,6 @@
     <Compile Include="DriverLoader.cs" />
     <Compile Include="EventOperations\FilesystemOperation.cs" />
     <Compile Include="Cmdlets\GetSystemState.cs" />
-    <Compile Include="EventOperations\GenericOperationEnums.cs" />
     <Compile Include="Cmdlets\EnableProcessMonitor.cs" />
     <Compile Include="NativeWin32.cs" />
     <Compile Include="EventOperations\NetworkOperation.cs" />
@@ -60,7 +59,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="EventOperations\RegistryOperation.cs" />
     <Compile Include="SystemInfo.cs" />
-    <Compile Include="SystemState.cs" />
+    <Compile Include="ProcessesSet.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

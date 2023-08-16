@@ -1,19 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Management.Automation;
-using System.Management.Automation.Tracing;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace PSProcessMonitor
 {
     public struct DetailedEvent
     {
-        public SystemState SystemState;
+        public ProcessesSet ProcessesSet;
         public Process Process;
-        public Thread Thread;
         public EventClass Class;
         public Enum Operation;
         public int Duration;
@@ -25,11 +19,11 @@ namespace PSProcessMonitor
 
     public class ProcmonReader
     {
-        private SystemState systemState;
+        private ProcessesSet processesSet;
         private Dictionary<int, RawEvent> preEventLog;
 
         public ProcmonReader() {
-            systemState = SystemState.GetCurrentState();
+            processesSet = new ProcessesSet();
             preEventLog = new Dictionary<int, RawEvent>();            
         }
 
@@ -58,8 +52,8 @@ namespace PSProcessMonitor
                     }
                     else
                     {
-                        (Process process, Thread thread) = systemState.AssignProcessAndThreadForEvent(ev);
-                        rawEvent.AssignProcessAndThread(process, thread);
+                        Process process = processesSet.AssignProcessForEvent(ev);
+                        rawEvent.AssignProcess(process);
                         if (rawEvent.IsPreEvent())
                         {
                             preEventLog[rawEvent.Sequence] = rawEvent;
@@ -70,9 +64,8 @@ namespace PSProcessMonitor
                     {
                         DetailedEvent detailedEvent = new DetailedEvent
                         {
-                            SystemState = systemState,
+                            ProcessesSet = processesSet,
                             Process = ev.Process,
-                            Thread = ev.Thread,
                             Class = ev.Class,
                             Operation = ev.Operation,
                             Duration = ev.Duration,

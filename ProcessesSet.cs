@@ -5,7 +5,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
-using System.Text;
 using System.Threading;
 
 namespace PSProcessMonitor
@@ -316,26 +315,6 @@ namespace PSProcessMonitor
         }
     }
 
-    public class Thread
-    {
-        public int ThreadId;
-        public int ProcessId;
-        public DateTime CreateTime;
-        public IntPtr StartAddress;
-
-        internal static Thread GetFromSystemThreadInformation(SYSTEM_THREAD_INFORMATION_x64 threadInformation)
-        {
-            Thread thread = new Thread
-            {
-                ProcessId = threadInformation.UniqueProcessId,
-                ThreadId = threadInformation.UniqueThreadId,
-                CreateTime = DateTime.FromFileTime((long)threadInformation.CreateTime),
-                StartAddress = threadInformation.StartAddress
-            };
-            return thread;
-        }
-    }
-
     public struct Module
     {
         public IntPtr BaseAddress;
@@ -367,28 +346,20 @@ namespace PSProcessMonitor
      * to map sequence identifiers to proper PIDs.
      * </summary>
      **/
-    public class SystemState
+    public class ProcessesSet
     {
         public Dictionary<int, Process> ProcessById;
-        public Dictionary<int, Thread> ThreadById;
         public Dictionary<int, Process> ProcessBySeq;
 
-        public SystemState(
+        public ProcessesSet(
             Dictionary<int, Process> processById,
-            Dictionary<int, Thread> threadById,
             Dictionary<int, Process> processBySeq)
         {
             ProcessById = processById;
-            ThreadById = threadById;
             ProcessBySeq = processBySeq;
         }
 
-        public SystemState(
-            Dictionary<int, Process> processById,
-            Dictionary<int, Thread> threadById) : this(processById, threadById, new Dictionary<int, Process>())
-        { }
-
-        public SystemState() : this(new Dictionary<int, Process>(), new Dictionary<int, Thread>(), new Dictionary<int, Process>())
+        public ProcessesSet() : this(new Dictionary<int, Process>(), new Dictionary<int, Process>())
         { }
 
         public Process GetProcessById(int processId)
@@ -411,16 +382,6 @@ namespace PSProcessMonitor
             return null;
         }
 
-        public Thread GetThreadById(int threadId)
-        {
-            if (ThreadById.TryGetValue(threadId, out Thread thread))
-            {
-                return thread;
-            }
-
-            return null;
-        }
-
         public void AssignSeqToProcess(Process process)
         {
             ProcessBySeq[process.ProcessSeq] = process;
@@ -431,19 +392,9 @@ namespace PSProcessMonitor
             ProcessById[process.ProcessId] = process;
         }
 
-        public void AddThread(Thread thread)
-        {
-            ThreadById[thread.ThreadId] = thread;
-        }
-
         public void FinishProcess(Process process)
         {
             ProcessById.Remove(process.ProcessId);
-        }
-
-        public void FinishThread(Thread thread)
-        {
-            ThreadById.Remove(thread.ThreadId);
         }
 
         public static bool TryEnableDebugPrivilege()
@@ -475,73 +426,7 @@ namespace PSProcessMonitor
             return false;
         }
 
-        public static SystemState GetCurrentState()
-        {
-            // Call this AFTER starting recording events
-            int processInformationSize = 0x100000;
-            int maxProcessInformationSize = 0x1000000;
-            Dictionary<int, Process> processById = new Dictionary<int, Process>();
-            Dictionary<int, Thread> threadById = new Dictionary<int, Thread>();
-
-            while (processInformationSize <= maxProcessInformationSize)
-            {
-                IntPtr processInformationBuffer = Marshal.AllocHGlobal(processInformationSize);
-                try
-                {
-                    uint ntstatus = NativeWin32.NtQuerySystemInformation(
-                        SYSTEM_INFORMATION_CLASS.SystemProcessInformation,
-                        processInformationBuffer,
-                        (uint)processInformationSize,
-                        out uint _
-                    );
-                    if (ntstatus != (uint)NTSTATUS.STATUS_SUCCESS)
-                    {
-                        if (ntstatus == (uint)NTSTATUS.STATUS_INFO_LENGTH_MISMATCH ||
-                           ntstatus == (uint)NTSTATUS.STATUS_BUFFER_TOO_SMALL)
-                        {
-                            processInformationSize *= 2;
-                            continue;
-                        }
-                        else
-                        {
-                            uint win32Error = NativeWin32.RtlNtStatusToDosError(ntstatus);
-                            Marshal.ThrowExceptionForHR((int)(0x80070000 | win32Error));
-                        }
-                    }
-                    DataStreamView dataStreamView = new DataStreamView(processInformationBuffer, processInformationSize);
-                    SYSTEM_PROCESS_INFORMATION_x64 processInformation;
-                    do
-                    {
-                        processInformation = dataStreamView.ReadStructure<SYSTEM_PROCESS_INFORMATION_x64>();
-                        for (int i = 0; i < processInformation.NumberOfThreads; i++)
-                        {
-                            SYSTEM_THREAD_INFORMATION_x64 threadInformation = dataStreamView.ReadStructure<SYSTEM_THREAD_INFORMATION_x64>();
-                            threadById[threadInformation.UniqueThreadId] = Thread.GetFromSystemThreadInformation(threadInformation);
-                        }
-                        processById[processInformation.UniqueProcessId] = Process.GetFromSystemProcessInformation(processInformation);
-                        if (processInformation.NextEntryOffset > 0)
-                        {
-                            dataStreamView.Move(
-                                ((int)processInformation.NextEntryOffset) -
-                                (int)(
-                                    Marshal.SizeOf<SYSTEM_PROCESS_INFORMATION_x64>() +
-                                    (Marshal.SizeOf<SYSTEM_THREAD_INFORMATION_x64>() * processInformation.NumberOfThreads)
-                                )
-                            );
-                        }
-                    } while (processInformation.NextEntryOffset > 0);
-                    break;
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(processInformationBuffer);
-                }
-            }
-
-            return new SystemState(processById, threadById);
-        }
-
-        public (Process process, Thread thread) AssignProcessAndThreadForEvent(RawEvent rawEvent)
+        public Process AssignProcessForEvent(RawEvent rawEvent)
         {
             // Get process. If new one, assign to state.
             Process process = null;
@@ -559,34 +444,13 @@ namespace PSProcessMonitor
             {
                 process = GetProcessBySeq(rawEvent.ProcessSeq);
             }
-            // Get thread. If new one, assign to state.
-            Thread thread;
-            if(rawEvent.Operation != null && rawEvent.Operation.Equals(ProcessOperation.ThreadCreate))
-            {
-                ThreadCreateDetails details = (ThreadCreateDetails)rawEvent.Details;
-                thread = new Thread
-                {
-                    ThreadId = details.ThreadID,
-                    ProcessId = process.ProcessId,
-                    CreateTime = rawEvent.Timestamp,
-                };
-                AddThread(thread);
-            }
-            else
-            {
-                thread = GetThreadById(rawEvent.ThreadId);
-            }
             // Handle process and thread exit.
             if (rawEvent.Operation != null && rawEvent.Operation.Equals(ProcessOperation.ProcessExit))
             {
                 process.EndTime = rawEvent.Timestamp;
                 FinishProcess(process);
             }
-            if (rawEvent.Operation != null && thread != null && rawEvent.Operation.Equals(ProcessOperation.ThreadExit))
-            {
-                FinishThread(thread);
-            }
-            return (process, thread);
+            return process;
         }
     }
 }

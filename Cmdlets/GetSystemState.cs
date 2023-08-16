@@ -10,7 +10,7 @@ namespace PSProcessMonitor
     {
         protected override void ProcessRecord()
         {
-            if(!SystemState.TryEnableDebugPrivilege())
+            if(!ProcessesSet.TryEnableDebugPrivilege())
             {
                 WriteWarning("Can't enable debug privilege");
             }

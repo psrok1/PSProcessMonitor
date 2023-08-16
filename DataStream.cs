@@ -87,19 +87,6 @@ namespace PSProcessMonitor
             return values;
         }
 
-        public DataStream ReadData(int count)
-        {
-            CheckHasBytes(count);
-            DataStream value = new DataStream(Ptr, count);
-            MoveUnsafe(count);
-            return value;
-        }
-
-        public DataStreamView ReadDataAsView(int count)
-        {
-            return ReadDataAsView(count, _parentRef);
-        }
-
         public long[] ReadInt64Values(int count)
         {
             int structSize = Marshal.SizeOf<long>() * count;
@@ -169,7 +156,7 @@ namespace PSProcessMonitor
         }
 
 
-        public new DataStreamView ReadDataAsView(int count)
+        public DataStreamView ReadDataAsView(int count)
         {
             return ReadDataAsView(count, this);
         }
@@ -211,7 +198,6 @@ namespace PSProcessMonitor
 
         public StructureReader(int size) : this(Marshal.AllocHGlobal(size), size) { }
 
-        public StructureReader(IntPtr ptr) : this(ptr, Marshal.SizeOf<T>()) { }
 
         public StructureReader() : this(Marshal.SizeOf<T>()) { }
 

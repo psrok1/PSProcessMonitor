@@ -88,7 +88,6 @@ namespace PSProcessMonitor
 
         public string GetStringByIndex(long index)
         {
-            Console.WriteLine(String.Format("{0}, {1}", index, strings[(int)index]));
             return strings[(int)index];
         }
     }
@@ -101,7 +100,7 @@ namespace PSProcessMonitor
         public PMLHeader Header;
         public SystemInfo SystemInfo;
         public StringsCollection Strings;
-        public SystemState SystemState;
+        public ProcessesSet ProcessesSet;
 
         private static T ReadStructure<T>(BinaryReader reader)
         {
@@ -113,26 +112,44 @@ namespace PSProcessMonitor
             return structure;
         }
 
+        private static RawEvent ReadRawEvent(BinaryReader reader)
+        {
+            EventHeaderStruct header = ReadStructure<EventHeaderStruct>(reader);
+            long[] stackTrace = new long[header.StackTraceLength];
+            for (int i = 0; i < header.StackTraceLength; i++)
+            {
+                stackTrace[i] = reader.ReadInt64();
+            }
+
+        }
+
         private void ReadStrings()
         {
+            int stringsCount;
+            int[] stringPtrs;
             fileStream.Seek((long)Header.StringsPtr, SeekOrigin.Begin);
-            BinaryReader streamReader = new BinaryReader(fileStream);
-            int stringsCount = streamReader.ReadInt32();
-            int[] stringPtrs = new int[stringsCount];
-            Strings = new StringsCollection();
-            for (int i = 0; i < stringsCount; i++)
+            using (BinaryReader binaryReader = new BinaryReader(fileStream, Encoding.Default, leaveOpen: true))
             {
-                stringPtrs[i] = streamReader.ReadInt32();
+                stringsCount = binaryReader.ReadInt32();
+                stringPtrs = new int[stringsCount];
+                Strings = new StringsCollection();
+                for (int i = 0; i < stringsCount; i++)
+                {
+                    stringPtrs[i] = binaryReader.ReadInt32();
+                }
+
             }
             for (int i = 0; i < stringsCount; i++)
             {
                 int ptr = stringPtrs[i];
                 fileStream.Seek((long)Header.StringsPtr + ptr, SeekOrigin.Begin);
-                streamReader = new BinaryReader(fileStream);
-                int size = streamReader.ReadInt32();
-                byte[] buffer = streamReader.ReadBytes(size);
-                string str = Encoding.Unicode.GetString(buffer);
-                Strings.AddString(str);
+                using (BinaryReader binaryReader = new BinaryReader(fileStream, Encoding.Default, leaveOpen: true))
+                {
+                    int size = binaryReader.ReadInt32();
+                    byte[] buffer = binaryReader.ReadBytes(size);
+                    string str = Encoding.Unicode.GetString(buffer);
+                    Strings.AddString(str);
+                }
             }
         }
 
@@ -143,46 +160,54 @@ namespace PSProcessMonitor
 
         private void ReadProcesses()
         {
+            int processesCount;
+            int[] processesPtrs;
+            ProcessesSet = new ProcessesSet();
+
             fileStream.Seek((long)Header.ProcessesPtr, SeekOrigin.Begin);
-            BinaryReader streamReader = new BinaryReader(fileStream);
-            int processesCount = streamReader.ReadInt32();
-            // Dummy read to skip process indexes
-            streamReader.ReadBytes(processesCount * 4);
-            int[] processesPtrs = new int[processesCount];
-            for (int i = 0; i < processesCount; i++)
+            using (BinaryReader binaryReader = new BinaryReader(fileStream, Encoding.Default, leaveOpen: true))
             {
-                processesPtrs[i] = streamReader.ReadInt32();
+
+                processesCount = binaryReader.ReadInt32();
+                // Dummy read to skip process indexes
+                binaryReader.ReadBytes(processesCount * 4);
+                processesPtrs = new int[processesCount];
+                for (int i = 0; i < processesCount; i++)
+                {
+                    processesPtrs[i] = binaryReader.ReadInt32();
+                }
             }
-            SystemState = new SystemState();
             for (int i = 0; i < processesCount; i++)
             {
                 int ptr = processesPtrs[i];
                 fileStream.Seek((long)Header.ProcessesPtr + ptr, SeekOrigin.Begin);
-                streamReader = new BinaryReader(fileStream);
-                PMLProcess64 processStruct = PMLReader.ReadStructure<PMLProcess64>(streamReader);
-                // TODO: Loading modules
-                Process process = new Process
+                using (BinaryReader binaryReader = new BinaryReader(fileStream, Encoding.Default, leaveOpen: true))
                 {
-                    ProcessSeq = processStruct.ProcessSeq,
-                    ProcessId = processStruct.ProcessId,
-                    ParentProcessId = processStruct.ParentProcessId,
-                    AuthenticationId = /*processStruct.AuthenticationId*/null,
-                    SessionId = processStruct.SessionId,
-                    Virtualized = processStruct.Virtualized != 0,
-                    IsProcess64bit = processStruct.Is64Bit != 0,
-                    Integrity = Strings.GetStringByIndex(processStruct.IntegrityStr),
-                    User = Strings.GetStringByIndex(processStruct.UserStr),
-                    ProcessName = Strings.GetStringByIndex(processStruct.ProcessNameStr),
-                    ImagePath = Strings.GetStringByIndex(processStruct.ImagePathStr),
-                    CommandLine = Strings.GetStringByIndex(processStruct.CommandLineStr),
-                    Company = Strings.GetStringByIndex(processStruct.CompanyStr),
-                    Version = Strings.GetStringByIndex(processStruct.VersionStr),
-                    Description = Strings.GetStringByIndex(processStruct.DescriptionStr),
-                    StartTime = ConvertTime(processStruct.StartTime),
-                    EndTime = ConvertTime(processStruct.EndTime),
-                };
-                SystemState.AddProcess(process);
-                SystemState.AssignSeqToProcess(process);
+                    PMLProcess64 processStruct = PMLReader.ReadStructure<PMLProcess64>(binaryReader);
+                    // TODO: Loading modules
+                    Process process = new Process
+                    {
+                        ProcessSeq = processStruct.ProcessSeq,
+                        ProcessId = processStruct.ProcessId,
+                        ParentProcessId = processStruct.ParentProcessId,
+                        AuthenticationId = /*TODO processStruct.AuthenticationId*/null,
+                        SessionId = processStruct.SessionId,
+                        Virtualized = processStruct.Virtualized != 0,
+                        IsProcess64bit = processStruct.Is64Bit != 0,
+                        Integrity = Strings.GetStringByIndex(processStruct.IntegrityStr),
+                        User = Strings.GetStringByIndex(processStruct.UserStr),
+                        ProcessName = Strings.GetStringByIndex(processStruct.ProcessNameStr),
+                        ImagePath = Strings.GetStringByIndex(processStruct.ImagePathStr),
+                        CommandLine = Strings.GetStringByIndex(processStruct.CommandLineStr),
+                        Company = Strings.GetStringByIndex(processStruct.CompanyStr),
+                        Version = Strings.GetStringByIndex(processStruct.VersionStr),
+                        Description = Strings.GetStringByIndex(processStruct.DescriptionStr),
+                        StartTime = ConvertTime(processStruct.StartTime),
+                        EndTime = ConvertTime(processStruct.EndTime),
+                    };
+                    ProcessesSet.AddProcess(process);
+                    ProcessesSet.AssignSeqToProcess(process);
+                }
             }
         }
 
@@ -215,6 +240,38 @@ namespace PSProcessMonitor
             reader.ReadStrings();
             reader.ReadProcesses();
             return reader;
+        }
+
+        public IEnumerable<RawEvent> ReadEvents()
+        {
+            uint eventsCount = Header.NumberOfEvents;
+            int[] eventPtrs;
+            fileStream.Seek((long)Header.EventOffsetsPtr, SeekOrigin.Begin);
+            using (BinaryReader binaryReader = new BinaryReader(fileStream, Encoding.Default, leaveOpen: true))
+            {
+                eventPtrs = new int[eventsCount];
+                for (uint i = 0; i < eventsCount; i++)
+                {
+                    eventPtrs[i] = binaryReader.ReadInt32();
+                    binaryReader.ReadByte(); // Unknown flag
+                }
+            }
+            fileStream.Seek((long)Header.EventsPtr, SeekOrigin.Begin);
+            using (BinaryReader binaryReader = new BinaryReader(fileStream, Encoding.Default, leaveOpen: true))
+            {
+                for(uint i = 0; i < eventsCount; i++)
+                {
+                    long eventPtr = (long)eventPtrs[i];
+                    if(fileStream.Position != eventPtr)
+                    {
+                        // Dummy read in case we have missed some structure data.
+                        // Maybe I should use Seek, but I don't want
+                        // to invalidate internal buffer used by FileStream.
+                        binaryReader.ReadBytes((int)(eventPtr - fileStream.Position));
+                    }
+                    yield return ReadRawEvent(binaryReader);
+                }
+            }
         }
 
         protected virtual void Dispose(bool disposing)
