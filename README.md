@@ -1,6 +1,8 @@
 ﻿# PSProcessMonitor
 
-Powershell cmdlet replacement for Sysinternals Process Monitor GUI.
+**Warning:** Project is still under development and things described below are not fully working yet. Wait patiently for initial release!**
+
+Powershell cmdlet utils for Sysinternals Process Monitor.
 
 ## Getting started
 
