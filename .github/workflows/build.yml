@@ -20,5 +20,5 @@ jobs:
       run: nuget restore PSProcessMonitor.sln
     - name: Build solution
       run: |
-        msbuild.exe PSProcessMonitor.sln /nologo /nr:false /p:DeleteExistingFiles=True /p:platform="Any CPU" /p:configuration="Release"
+        msbuild.exe PSProcessMonitor.sln /nologo /nr:false /p:DeleteExistingFiles=True /p:platform="Any CPU" /p:configuration="Release" /p:AllowUnsafeBlocks=true
      
