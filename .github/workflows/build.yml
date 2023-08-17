@@ -1,0 +1,24 @@
+name: PSProcessMonitor build
+
+on:
+  push:
+    branches: main
+  pull_request:
+    branches: main
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1
+    - name: Setup NuGet
+      uses: NuGet/setup-nuget@v1.2.0
+    - name: Navigate to Workspace
+      run: cd $GITHUB_WORKSPACE
+    - name: Restore packages
+      run: nuget restore PSProcessMonitor.sln
+    - name: Build solution
+      run: |
+        msbuild.exe PSProcessMonitor.sln /nologo /nr:false /p:DeleteExistingFiles=True /p:platform="Any CPU" /p:configuration="Release"
+     
