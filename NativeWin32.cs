@@ -762,5 +762,8 @@ namespace PSProcessMonitor
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
         internal static extern bool GetComputerNameW(StringBuilder lpBuffer, ref uint lpnSize);
+
+        [DllImport("kernel32.dll", EntryPoint = "CopyMemory", SetLastError = false)]
+        public static extern void CopyMemory(IntPtr dest, IntPtr src, uint count);
     }
 }

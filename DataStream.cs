@@ -1,8 +1,6 @@
 ﻿using System;
 using System.IO;
-using System.Management.Automation.Host;
 using System.Runtime.InteropServices;
-using System.Runtime.Remoting.Messaging;
 using System.Text;
 
 namespace PSProcessMonitor
@@ -196,10 +194,7 @@ namespace PSProcessMonitor
         private static IntPtr CopyFromPtr(IntPtr ptr, int size)
         {
             IntPtr ownPtr = Marshal.AllocHGlobal(size);
-            unsafe
-            {
-                Buffer.MemoryCopy(ptr.ToPointer(), ownPtr.ToPointer(), size, size);
-            }
+            NativeWin32.CopyMemory(ownPtr, ptr, (uint)size);
             return ownPtr;
         }
 
