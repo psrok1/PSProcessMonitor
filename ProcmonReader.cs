@@ -17,6 +17,11 @@ namespace PSProcessMonitor
         public EventDetails PostDetails;
     }
 
+    public class ProcmonReaderException: Exception
+    {
+        public ProcmonReaderException(string message) : base(message) { }
+    }
+
     public class ProcmonReader
     {
         private ProcessesSet processesSet;
@@ -43,13 +48,11 @@ namespace PSProcessMonitor
                         RawEvent completedEvent = preEventLog[rawEvent.Sequence];
                         if (completedEvent == null)
                         {
-                            // todo: got post event for unknown pre event
-                            rawEvent = null;
+                            throw new ProcmonReaderException(string.Format("Got post event for unknown pre event (Sequence={0})", rawEvent.Sequence));
                         }
                         else {
                             preEventLog.Remove(rawEvent.Sequence);
-                            EventDetails postDetails = RawEvent.ParsePostDetails(eventStruct.DetailsData, completedEvent.Operation);
-                            completedEvent.PostDetails = postDetails;
+                            completedEvent.ApplyPostEvent(rawEvent, eventStruct.DetailsData);
                             rawEvent = completedEvent;
                         }
                     }

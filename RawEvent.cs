@@ -67,15 +67,16 @@ namespace PSProcessMonitor
         public readonly EventHeaderStruct Header;
         public readonly long[] StackTrace;
 
-        public readonly int ProcessSeq;
-        public readonly int ThreadId;
-        public readonly EventClass Class;
-        public readonly Enum Operation;
-        public readonly int Sequence;
-        public readonly int Duration;
-        public readonly DateTime Timestamp;
-        public readonly int Status;
-        public readonly EventDetails Details;
+        public int ProcessSeq { get; private set; }
+        public int ThreadId { get; private set; }
+        public EventClass Class { get; private set; }
+        public Enum Operation { get; private set; }
+        public int Sequence { get; private set; }
+        // TODO: I think that Duration field is PML only
+        public int Duration { get; private set; }
+        public DateTime Timestamp { get; private set; }
+        public int Status { get; private set; }
+        public EventDetails Details { get; private set; }
         public EventDetails PostDetails { get; internal set; }
 
         private delegate EventDetails DetailsConstructor(DataStreamView dataStreamView);
@@ -143,9 +144,21 @@ namespace PSProcessMonitor
             return detailsConstructor(detailsData);
         }
 
+        public void ApplyPostEvent(RawEvent postEvent, DataStreamView postDetailsData)
+        {
+            // Apply details from EventClass.Post event got from live monitoring
+            Status = postEvent.Status;
+            // TODO: Duration
+            if(postEvent.Header.DetailsLength > 0)
+            {
+                PostDetails = ParsePostDetails(postDetailsData, Operation);
+            }
+        }
+
         public bool IsPreEvent()
         {
-            return Class.Equals(EventClass.File) || Class.Equals(EventClass.Registry);
+            const int STATUS_PENDING = 0x00000103;
+            return (Class.Equals(EventClass.File) || Class.Equals(EventClass.Registry)) && Status == STATUS_PENDING;
         }
     }
 }
