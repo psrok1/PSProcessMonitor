@@ -19,7 +19,8 @@ namespace PSProcessMonitor
             {
                 foreach (DetailedEvent ev in reader.GetEvents())
                 {
-                    WriteObject(ev);
+                    if(ev.Class == EventClass.Network)
+                        WriteObject(ev);
                 }
             }
         }

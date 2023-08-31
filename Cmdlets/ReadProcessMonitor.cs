@@ -25,6 +25,14 @@ namespace PSProcessMonitor
         }
         private int? pid = null;
 
+        [Parameter]
+        public SwitchParameter DumpEvents
+        {
+            get { return dumpEvents; }
+            set { dumpEvents = value; }
+        }
+        private bool dumpEvents = false;
+
         readonly CancellationTokenSource cancellationTokenSource = new CancellationTokenSource();
 
         private delegate bool EventFilter(DetailedEvent detailedEvent);

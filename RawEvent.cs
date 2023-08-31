@@ -43,11 +43,18 @@ namespace PSProcessMonitor
         public int DetailsLength;
         // This field is used in PML files only
         [FieldOffset(0x30)]
-        public int ExtraDetailsOffset;
+        public int PostDetailsOffset;
     }
 
     public abstract class EventDetails
     {
+    }
+
+    public struct EventStruct
+    {
+        public EventHeaderStruct Header;
+        public long[] StackTrace;
+        public DataStreamView DetailsData;
     }
 
     /**
@@ -57,19 +64,19 @@ namespace PSProcessMonitor
      */
     public class RawEvent
     {
-        public readonly EventHeaderStruct header;
-        public readonly long[] stackTrace;
+        public readonly EventHeaderStruct Header;
+        public readonly long[] StackTrace;
 
-        public int ProcessSeq;
-        public int ThreadId;
-        public EventClass Class;
-        public Enum Operation;
-        public int Sequence;
-        public int Duration;
-        public DateTime Timestamp;
-        public int Status;
-        public EventDetails Details;
-        public EventDetails PostDetails;
+        public readonly int ProcessSeq;
+        public readonly int ThreadId;
+        public readonly EventClass Class;
+        public readonly Enum Operation;
+        public readonly int Sequence;
+        public readonly int Duration;
+        public readonly DateTime Timestamp;
+        public readonly int Status;
+        public readonly EventDetails Details;
+        public EventDetails PostDetails { get; internal set; }
 
         private delegate EventDetails DetailsConstructor(DataStreamView dataStreamView);
 
@@ -102,27 +109,38 @@ namespace PSProcessMonitor
             [RegistryOperation.RegCreateKey] = (detailsData) => new RegistryPostOpenCreateKeyDetails(detailsData),
         };
 
-        public RawEvent(EventHeaderStruct header, long[] stackTrace, DataStreamView detailsData)
+        public RawEvent(EventStruct eventStruct)
         {
-            this.header = header;
-            this.stackTrace = stackTrace;
+            Header = eventStruct.Header;
+            StackTrace = eventStruct.StackTrace;
 
-            ProcessSeq = header.ProcessSeq;
-            ThreadId = header.ThreadId;
-            Class = (EventClass)header.Class;
-            if(Class != EventClass.Post)
+            ProcessSeq = Header.ProcessSeq;
+            ThreadId = Header.ThreadId;
+            Class = (EventClass)Header.Class;
+            if (Class != EventClass.Post)
             {
-                Operation = (Enum)Enum.ToObject(operationEnumMapping[Class], header.Operation);
+                Operation = (Enum)Enum.ToObject(operationEnumMapping[Class], Header.Operation);
                 operationDetailsMapping.TryGetValue(Operation, out DetailsConstructor detailsConstructor);
                 if (detailsConstructor != null)
                 {
-                    Details = detailsConstructor(detailsData);
+                    Details = detailsConstructor(eventStruct.DetailsData);
                 }
             }
-            Sequence = header.Sequence;
-            Duration = header.Duration;
-            Timestamp = DateTime.FromFileTime(header.Timestamp);
-            Status = header.Status;
+            Sequence = Header.Sequence;
+            Duration = Header.Duration;
+            Timestamp = DateTime.FromFileTime(Header.Timestamp);
+            Status = Header.Status;
+        }
+
+        public static EventDetails ParsePostDetails(DataStreamView detailsData, Enum operation)
+        {
+            // PostDetails may come from two places:
+            // - EventClass.Post event that contains it as a payload
+            // - Additional attachment to event from PML file located at PostDetailsOffset
+            postOperationDetailsMapping.TryGetValue(operation, out DetailsConstructor detailsConstructor);
+            if (detailsConstructor == null)
+                return null;
+            return detailsConstructor(detailsData);
         }
 
         public bool IsPreEvent()

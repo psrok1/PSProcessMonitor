@@ -1,7 +1,10 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Management.Automation.Tracing;
 using System.Runtime.InteropServices;
+using System.Runtime.Remoting.Messaging;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -75,15 +78,19 @@ namespace PSProcessMonitor
             _stream = new MemoryDataStream(eventBuffer, MessageLength);
         }
 
-        public IEnumerable<RawEvent> ParseEvents()
+        public IEnumerable<EventStruct> ParseEvents()
         {
             while (!_stream.End())
             {
                 EventHeaderStruct header = _stream.ReadStructure<EventHeaderStruct>();
                 long[] stackTrace = _stream.ReadInt64Values(header.StackTraceLength);
                 MemoryDataStreamView detailsData = _stream.ReadDataAsView(header.DetailsLength);
-                RawEvent rawEvent = new RawEvent(header, stackTrace, detailsData);
-                yield return rawEvent;
+                yield return new EventStruct
+                {
+                    Header = header,
+                    StackTrace = stackTrace,
+                    DetailsData = detailsData
+                };
             }
         }
 
@@ -108,11 +115,11 @@ namespace PSProcessMonitor
         //
         // Let's make it somewhere around 1GB (MaxReceiverQueueSize*MaxMessageSize)
         public static readonly int MaxReceiverQueueSize = 50000;
-        private SafeFilterHandle _port;
+        private readonly SafeFilterHandle port;
 
         public ProcmonDriverClient(SafeFilterHandle port)
         {
-            _port = port;
+            this.port = port;
         }
 
         ~ProcmonDriverClient()
@@ -120,7 +127,11 @@ namespace PSProcessMonitor
             Disconnect();
         }
 
-        public IEnumerable<RawEvent> ReceiveEvents(CancellationToken cancellationToken)
+        /**
+         * Details contained in EventStruct returned by this method might be disposed
+         * in next iteration, so parse these data immediately after getting them
+         **/
+        public IEnumerable<EventStruct> ReceiveEvents(CancellationToken cancellationToken)
         {
             BlockingCollection<DriverMessage> driverMessageQueue = new BlockingCollection<DriverMessage>();
             // Task cares of proper exception passing to the main thread
@@ -140,7 +151,7 @@ namespace PSProcessMonitor
                         };
                         // Zero DriverMessageHeader to ensure that old message length is not left after failed read
                         NativeWin32.FillMemory(messageBuffer, (uint)Marshal.SizeOf<DriverMessageHeader>(), 0);
-                        uint result = NativeWin32.FilterGetMessage(_port, messageBuffer, (uint)DriverMessage.MaxMessageSize, ref overlapped);
+                        uint result = NativeWin32.FilterGetMessage(port, messageBuffer, (uint)DriverMessage.MaxMessageSize, ref overlapped);
                         if (result != ((uint)HRESULT.ERROR_IO_PENDING))
                         {
                             Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
@@ -230,13 +241,13 @@ namespace PSProcessMonitor
                 OperationCode = 0,
                 Flags = flags
             };
-            int result = NativeWin32.FilterSendMessage(_port, ref controlMessage, (uint)Marshal.SizeOf(controlMessage), IntPtr.Zero, 0, out _);
+            int result = NativeWin32.FilterSendMessage(port, ref controlMessage, (uint)Marshal.SizeOf(controlMessage), IntPtr.Zero, 0, out _);
             Marshal.ThrowExceptionForHR(result);
         }
 
         public void Disconnect()
         {
-            _port.Close();
+            port.Close();
         }
 
         public static ProcmonDriverClient Connect()

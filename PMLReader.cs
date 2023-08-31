@@ -112,13 +112,6 @@ namespace PSProcessMonitor
             return structure;
         }
 
-        private static RawEvent ReadRawEvent(DataStreamView dataStreamView)
-        {
-            EventHeaderStruct header = dataStreamView.ReadStructure<EventHeaderStruct>();
-            long[] stackTrace = dataStreamView.ReadInt64Values(header.StackTraceLength);
-            return new RawEvent(header, stackTrace, dataStreamView);
-        }
-
         private void ReadStrings()
         {
             int stringsCount;
@@ -237,7 +230,19 @@ namespace PSProcessMonitor
             return reader;
         }
 
-        private IEnumerable<RawEvent> ReadRawEvents()
+        private static EventStruct ReadEvent(DataStreamView dataStreamView)
+        {
+            EventHeaderStruct header = dataStreamView.ReadStructure<EventHeaderStruct>();
+            long[] stackTrace = dataStreamView.ReadInt64Values(header.StackTraceLength);
+            return new EventStruct
+            {
+                Header = header,
+                StackTrace = stackTrace,
+                DetailsData = dataStreamView
+            };
+        }
+
+        private IEnumerable<RawEvent> ReadEvents()
         {
             uint eventsCount = Header.NumberOfEvents;
             int[] eventPtrs;
@@ -258,21 +263,38 @@ namespace PSProcessMonitor
                 for (uint i = 0; i < eventsCount; i++)
                 {
                     long eventPtr = eventPtrs[i];
-                    if (fileStream.Position != eventPtr)
+                    binaryReader.BaseStream.Seek(eventPtr, SeekOrigin.Begin);
+                    EventStruct eventStruct = ReadEvent(dataStreamView);
+                    RawEvent rawEvent = new RawEvent(eventStruct);
+                    if(rawEvent.IsPreEvent())
                     {
-                        // Dummy read in case we have missed some structure data.
-                        // Maybe I should use Seek, but I don't want
-                        // to invalidate internal buffer used by FileStream.
-                        dataStreamView.Move((int)(eventPtr - fileStream.Position));
+                        // originalPosition points to the offset after parsed RawEvent (hopefully the next event)
+                        long originalPosition = binaryReader.BaseStream.Position;
+                        long postDetailsPosition = eventPtr + eventStruct.Header.PostDetailsOffset;
+                        // We need to seek to the post details offset that originates in eventPtr
+                        binaryReader.BaseStream.Seek(postDetailsPosition, SeekOrigin.Begin);
+                        // Then we have uint16 length of the post details and then the actual details structure
+                        ushort postDetailsLength = binaryReader.ReadUInt16();
+                        EventDetails postDetails = RawEvent.ParsePostDetails(dataStreamView, rawEvent.Operation);
+                        rawEvent.PostDetails = postDetails;
+                        if((binaryReader.BaseStream.Position - postDetailsLength - 2) > postDetailsPosition)
+                        {
+                            throw new PMLException(string.Format("Buffer outrun after parsing post details ({0} != {1})",
+                                binaryReader.BaseStream.Position - postDetailsPosition - 2,
+                                postDetailsLength
+                            ));
+                        }
+                        // Go back to the original position
+                        binaryReader.BaseStream.Seek(originalPosition, SeekOrigin.Begin);
                     }
-                    yield return ReadRawEvent(dataStreamView);
+                    yield return rawEvent;
                 }
             }
         }
 
         public IEnumerable<DetailedEvent> GetEvents()
         {
-            foreach(RawEvent rawEvent in ReadRawEvents())
+            foreach(RawEvent rawEvent in ReadEvents())
             {
                 DetailedEvent detailedEvent = new DetailedEvent
                 {

@@ -30,7 +30,7 @@ namespace PSProcessMonitor
 
     public class FileDataStreamView : DataStreamView
     {
-        private BinaryReader reader;
+        private readonly BinaryReader reader;
 
         public FileDataStreamView(BinaryReader reader)
         {
@@ -40,7 +40,7 @@ namespace PSProcessMonitor
         }
         public override void Move(int offset)
         {
-            reader.ReadBytes(offset);
+            reader.BaseStream.Seek(offset, SeekOrigin.Current);
         }
         public override T ReadStructure<T>()
         {
@@ -76,17 +76,13 @@ namespace PSProcessMonitor
 
     /**
      * <summary>
-     * Serves stream memory view over unowned unmanaged memory block, optionally backed by DataStream object.
+     * Serves stream memory view over unowned unmanaged memory block, optionally backed by MemoryDataStream object.
      * It doesn't hold ownership on underlying memory, so it doesn't offer IDisposable interface.
      * </summary>
      */
     public class MemoryDataStreamView : DataStreamView
     {
-#pragma warning disable IDE0052
-        // Keeps reference to the parent DataStream that holds the actual unmanaged memory
-        // Although I'm not sure if it's necessary
-        private MemoryDataStream _parentRef;
-#pragma warning restore IDE0052
+        private readonly MemoryDataStream parent;
         public IntPtr Ptr { get; private set; }
         public IntPtr InitialPtr { get; private set; }
         public int Size { get; private set; }
@@ -99,11 +95,15 @@ namespace PSProcessMonitor
 
         private MemoryDataStreamView(IntPtr ptr, int size, MemoryDataStream parent) : this(ptr, size)
         {
-            _parentRef = parent;
+            this.parent = parent;
         }
 
         protected virtual void CheckHasBytes(int howMany)
         {
+            if (parent != null && parent.IsDisposed)
+            {
+                throw new ObjectDisposedException(parent.GetType().FullName);
+            }
             if (Size < howMany)
             {
                 throw new ArgumentOutOfRangeException(nameof(howMany), $"Tried to read {howMany} but only {Size} bytes left");
@@ -190,6 +190,7 @@ namespace PSProcessMonitor
     public sealed class MemoryDataStream : MemoryDataStreamView, IDisposable
     {
         private bool _disposed = false;
+        public bool IsDisposed { get { return _disposed; } }
 
         private static IntPtr CopyFromPtr(IntPtr ptr, int size)
         {

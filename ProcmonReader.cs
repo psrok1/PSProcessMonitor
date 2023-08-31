@@ -24,7 +24,7 @@ namespace PSProcessMonitor
 
         public ProcmonReader() {
             processesSet = new ProcessesSet();
-            preEventLog = new Dictionary<int, RawEvent>();            
+            preEventLog = new Dictionary<int, RawEvent>();
         }
 
         public IEnumerable<DetailedEvent> GetEvents(CancellationToken cancellationToken)
@@ -35,43 +35,46 @@ namespace PSProcessMonitor
             procmonClient.ConfigureFlags(7);
             try
             {
-                foreach (RawEvent rawEvent in procmonClient.ReceiveEvents(cancellationToken))
+                foreach (EventStruct eventStruct in procmonClient.ReceiveEvents(cancellationToken))
                 {
-                    RawEvent ev = rawEvent;
+                    RawEvent rawEvent = new RawEvent(eventStruct);
                     if (rawEvent.Class.Equals(EventClass.Post))
                     {
                         RawEvent completedEvent = preEventLog[rawEvent.Sequence];
-                        if (completedEvent != null)
-                        {
-                            preEventLog.Remove(rawEvent.Sequence);
-                        } else
+                        if (completedEvent == null)
                         {
                             // todo: got post event for unknown pre event
+                            rawEvent = null;
                         }
-                        ev = completedEvent;
+                        else {
+                            preEventLog.Remove(rawEvent.Sequence);
+                            EventDetails postDetails = RawEvent.ParsePostDetails(eventStruct.DetailsData, completedEvent.Operation);
+                            completedEvent.PostDetails = postDetails;
+                            rawEvent = completedEvent;
+                        }
                     }
                     else
                     {
-                        processesSet.AssignProcessForEvent(ev);
+                        processesSet.AssignProcessForEvent(rawEvent);
                         if (rawEvent.IsPreEvent())
                         {
                             preEventLog[rawEvent.Sequence] = rawEvent;
                             continue;
                         }
                     }
-                    if (ev != null)
+                    if (rawEvent != null)
                     {
                         DetailedEvent detailedEvent = new DetailedEvent
                         {
                             ProcessesSet = processesSet,
-                            Process = processesSet.GetProcessBySeq(ev.ProcessSeq),
-                            Class = ev.Class,
-                            Operation = ev.Operation,
-                            Duration = ev.Duration,
-                            Timestamp = ev.Timestamp,
-                            Status = ev.Status,
-                            Details = ev.Details,
-                            PostDetails = ev.PostDetails,
+                            Process = processesSet.GetProcessBySeq(rawEvent.ProcessSeq),
+                            Class = rawEvent.Class,
+                            Operation = rawEvent.Operation,
+                            Duration = rawEvent.Duration,
+                            Timestamp = rawEvent.Timestamp,
+                            Status = rawEvent.Status,
+                            Details = rawEvent.Details,
+                            PostDetails = rawEvent.PostDetails,
                         };
                         yield return detailedEvent;
                     }
